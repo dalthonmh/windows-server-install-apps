@@ -1,0 +1,10 @@
+# Descargas y logs locales
+downloads/
+*.zip
+*.exe
+*.log
+logs/
+
+# No commitear estado temporal
+.DS_Store
+Thumbs.db
