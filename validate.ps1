@@ -5,13 +5,20 @@
 param([string]$Config = "config.json")
 
 $fullPath = (Resolve-Path $Config).ProviderPath
-$jsonText = [System.IO.File]::ReadAllText($fullPath, [Text.Encoding]::UTF8)
-$rawConfig = ConvertFrom-Json -InputObject $jsonText
+$jsonText = [System.IO.File]::ReadAllText($fullPath)
+
+$rawConfig = $null
+try {
+    $rawConfig = ConvertFrom-Json -InputObject $jsonText
+} catch {
+    Write-Host "ERROR parseando JSON: $_" -ForegroundColor Red
+    exit 1
+}
 
 function Get-TopLevelKeys($obj) {
     if ($null -eq $obj) { return @() }
     if ($obj -is [hashtable]) { return @($obj.Keys) }
-    if ($obj -is [psobject]) { return @($obj.PSObject.Properties.Name) }
+    if ($obj.PSObject) { return @($obj.PSObject.Properties.Name) }
     return @()
 }
 
@@ -21,7 +28,7 @@ function Get-Property($obj, [string]$name) {
         if ($obj.ContainsKey($name)) { return $obj[$name] }
         return $null
     }
-    if ($obj -is [psobject]) {
+    if ($obj.PSObject) {
         $prop = $obj.PSObject.Properties[$name]
         if ($prop) { return $prop.Value }
         return $null
@@ -32,9 +39,9 @@ function Get-Property($obj, [string]$name) {
 Write-Host "=== Validacion ===" -ForegroundColor Cyan
 
 $searchSpace = $rawConfig
-$componentsSection = Get-Property $rawConfig 'components'
-if ($componentsSection) {
-    $searchSpace = $componentsSection
+$compSection = Get-Property $rawConfig 'components'
+if ($compSection) {
+    $searchSpace = $compSection
 }
 
 $searchKeys = Get-TopLevelKeys $searchSpace
@@ -56,15 +63,12 @@ foreach ($key in $searchKeys) {
         }
     }
 
-    # Validacion basica de servicio
-    $svcName = Get-Property $comp 'service'
+    $svc = Get-Property $comp 'service'
+    $svcName = Get-Property $svc 'name'
     if ($svcName) {
-        $svcName = Get-Property $svcName 'name'
-    }
-    if ($svcName) {
-        $svc = Get-Service $svcName -ErrorAction SilentlyContinue
-        if ($svc) {
-            Write-Host "$svcName : $($svc.Status)"
+        $s = Get-Service $svcName -ErrorAction SilentlyContinue
+        if ($s) {
+            Write-Host "$svcName : $($s.Status)"
         } else {
             Write-Host "$svcName : NO EXISTE"
         }
