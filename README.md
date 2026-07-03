@@ -19,34 +19,42 @@ git clone https://github.com/dalthonmh/windows-server-install-apps.git C:\deploy
 cd C:\deploy\install-apps
 ```
 
-3. Edita `config.json` (solo este archivo) — usa esta estructura exacta:
+3. Edita `config.psd1` (solo este archivo) — usa hashtable de PowerShell (formato nativo y más confiable en PS 5.1):
 
-```json
-{
-  "server": {
-    "name": "MI-SERVIDOR",
-    "drive": "D:"
-  },
-  "nginx": {
-    "enabled": true,
-    "version": "1.30.3",
-    "url": "https://dalthonmh.com/bin/nginx-1.30.3.zip",
-    "port": 80,
-    "paths": {
-      "install": "D:\\apps\\nginx\\1.30.3",
-      "config": "D:\\config\\nginx",
-      "data": "D:\\data\\nginx",
-      "logs": "D:\\logs\\nginx"
-    },
-    "service": {
-      "name": "Nginx",
-      "displayName": "Nginx Web Server"
+```powershell
+@{
+    server = @{
+        name  = "MI-SERVIDOR"
+        drive = "D:"
     }
-  }
+
+    nginx = @{
+        enabled = $true
+        version = "1.30.3"
+        url     = "https://dalthonmh.com/bin/nginx-1.30.3.zip"
+
+        paths = @{
+            install = "D:\apps\nginx\1.30.3"
+            config  = "D:\config\nginx"
+            data    = "D:\data\nginx"
+            logs    = "D:\logs\nginx"
+        }
+
+        port = 80
+
+        service = @{
+            name        = "Nginx"
+            displayName = "Nginx Web Server"
+        }
+    }
 }
 ```
 
-Importante: debe tener `"enabled": true` y ser JSON válido (sin comentarios).
+Importante: usa `$true` (no `true`), y las rutas con `\` normal (no `\\`). 
+
+El script soporta **ambos formatos**:
+- `config.psd1` (recomendado — nativo y más confiable en Windows PowerShell 5.1)
+- `config.json` (legacy)
 
 4. Ejecuta:
 
@@ -66,16 +74,16 @@ O abre `http://ip-de-servidor-windows` en el navegador.
 
 ## Agregar un nuevo servicio (fácil)
 
-1. Agrega el bloque en `config.json`:
+1. Agrega el bloque en `config.psd1`:
 
-   ```json
-   "apache": {
-     "enabled": true,
-     "version": "...",
-     "url": "https://...",
-     "port": 8080,
-     "paths": { ... },
-     "service": { "name": "Apache", "displayName": "Apache" }
+   ```powershell
+   apache = @{
+       enabled = $true
+       version = "..."
+       url     = "https://..."
+       port    = 8080
+       paths   = @{ ... }
+       service = @{ name = "Apache"; displayName = "Apache" }
    }
    ```
 
@@ -96,7 +104,8 @@ O abre `http://ip-de-servidor-windows` en el navegador.
 ```
 .
 ├── README.md
-├── config.json          # ← Edita solo esto
+├── config.psd1          # ← Recomendado (nativo PS 5.1)
+├── config.json          # ← Soporte legacy
 ├── deploy.ps1           # ← Ejecuta esto
 ├── validate.ps1
 ├── .gitignore
@@ -120,4 +129,4 @@ O abre `http://ip-de-servidor-windows` en el navegador.
 - Todo queda registrado en `D:\logs\deployment\`
 - Git = historial y rollback fácil
 
-Listo. Edita `config.json` → corre `deploy.ps1`.
+Listo. Edita `config.psd1` (o `config.json`) → corre `deploy.ps1`.

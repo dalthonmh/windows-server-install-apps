@@ -5,13 +5,20 @@
 #>
 [CmdletBinding()]
 param(
-    [string]$Config = "config.json"
+    [string]$Config = "config.psd1"
 )
 
 $ErrorActionPreference = 'Stop'
 
+# Auto-detecta config si el default no existe (prefiere .psd1)
 if (-not (Test-Path $Config)) {
-    throw "No existe el archivo: $Config"
+    foreach ($c in @('config.psd1', 'config.json')) {
+        if (Test-Path $c) { $Config = $c; break }
+    }
+}
+
+if (-not (Test-Path $Config)) {
+    throw "No existe el archivo de configuración: $Config (buscando config.psd1 o config.json)"
 }
 
 function Get-TopLevelKeys($obj) {
@@ -47,35 +54,38 @@ function Test-IsEnabled($value) {
     return $value -eq $true -or $value -eq 'true' -or $value -eq 1
 }
 
-function Read-ConfigJson([string]$path) {
-    $fullPath = (Resolve-Path $path).ProviderPath
-    $bytes = [System.IO.File]::ReadAllBytes($fullPath)
-    if ($bytes.Length -ge 3 -and $bytes[0] -eq 0xEF -and $bytes[1] -eq 0xBB -and $bytes[2] -eq 0xBF) {
-        $bytes = $bytes[3..($bytes.Length - 1)]
-    }
-    $jsonText = [System.Text.Encoding]::UTF8.GetString($bytes).Trim()
-
-    if ([string]::IsNullOrWhiteSpace($jsonText)) {
-        throw "El archivo JSON esta vacio: $path"
-    }
-    if (-not ($jsonText.StartsWith('{') -and $jsonText.EndsWith('}'))) {
-        throw "El archivo JSON debe ser un objeto (empezar con { y terminar con })"
+function Read-Config([string]$path) {
+    if (-not (Test-Path $path)) {
+        throw "No existe el archivo: $path"
     }
 
-    # PS 5.1 compatibility: pipe the full string so it is not enumerated as chars.
-    # Using pipeline ensures ConvertFrom-Json receives the complete JSON as one item.
-    $parsed = $jsonText | ConvertFrom-Json
+    $ext = [System.IO.Path]::GetExtension($path).ToLower()
 
-    $keys = Get-TopLevelKeys $parsed
-    if ($keys.Count -gt 0) {
+    if ($ext -eq '.psd1') {
+        # Formato recomendado y nativo para PS 5.1
+        try {
+            return Import-PowerShellDataFile -Path $path -ErrorAction Stop
+        } catch {
+            throw "Error importando '$path' (psd1): $_"
+        }
+    }
+    else {
+        # Soporte legacy para .json (más frágil en PS 5.1)
+        $fullPath = (Resolve-Path $path).ProviderPath
+        $bytes = [System.IO.File]::ReadAllBytes($fullPath)
+        if ($bytes.Length -ge 3 -and $bytes[0] -eq 0xEF -and $bytes[1] -eq 0xBB -and $bytes[2] -eq 0xBF) {
+            $bytes = $bytes[3..($bytes.Length - 1)]
+        }
+        $jsonText = [System.Text.Encoding]::UTF8.GetString($bytes).Trim()
+
+        if ([string]::IsNullOrWhiteSpace($jsonText) -or -not ($jsonText.StartsWith('{') -and $jsonText.EndsWith('}'))) {
+            throw "El archivo no parece un objeto JSON válido: $path"
+        }
+
+        # Evitamos el problema anterior de pasar array/string enumerable
+        $parsed = ConvertFrom-Json -InputObject $jsonText
         return $parsed
     }
-
-    # Fallback para PS 5.1 cuando ConvertFrom-Json no deserializa propiedades.
-    Add-Type -AssemblyName System.Web.Extensions
-    $serializer = New-Object System.Web.Script.Serialization.JavaScriptSerializer
-    $serializer.RecursionLimit = 100
-    return $serializer.DeserializeObject($jsonText)
 }
 
 function Log($msg, $color = "White") {
@@ -83,11 +93,11 @@ function Log($msg, $color = "White") {
     Write-Host "[$ts] $msg" -ForegroundColor $color
 }
 
-# === Carga robusta del JSON para PS 5.1 ===
+# === Carga de configuración (.psd1 nativo para PS 5.1) ===
 try {
-    $config = Read-ConfigJson $Config
+    $config = Read-Config $Config
 } catch {
-    Log "ERROR leyendo config.json: $_" "Red"
+    Log "ERROR leyendo config: $_" "Red"
     throw
 }
 
@@ -130,9 +140,9 @@ foreach ($key in $searchKeys) {
 }
 
 if ($components.Count -eq 0) {
-    Log "No hay componentes habilitados en config.json" "Yellow"
-    Log "Revisa que tenga 'enabled': true" "Yellow"
-    Log 'Ejemplo: "nginx": { "enabled": true, ... }' "DarkGray"
+    Log "No hay componentes habilitados en $Config" "Yellow"
+    Log "Revisa que tenga 'enabled': true (o `$true en .psd1)" "Yellow"
+    Log 'Ejemplo (psd1):  nginx = @{ enabled = $true; ... }' "DarkGray"
     exit
 }
 

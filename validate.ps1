@@ -2,7 +2,14 @@
 .SYNOPSIS
     Validacion simple despues del despliegue.
 #>
-param([string]$Config = "config.json")
+param([string]$Config = "config.psd1")
+
+# Auto-detecta config si es necesario
+if (-not (Test-Path $Config)) {
+    foreach ($c in @('config.psd1', 'config.json')) {
+        if (Test-Path $c) { $Config = $c; break }
+    }
+}
 
 function Get-TopLevelKeys($obj) {
     if ($null -eq $obj) { return @() }
@@ -37,31 +44,42 @@ function Test-IsEnabled($value) {
     return $value -eq $true -or $value -eq 'true' -or $value -eq 1
 }
 
-function Read-ConfigJson([string]$path) {
-    $fullPath = (Resolve-Path $path).ProviderPath
-    $bytes = [System.IO.File]::ReadAllBytes($fullPath)
-    if ($bytes.Length -ge 3 -and $bytes[0] -eq 0xEF -and $bytes[1] -eq 0xBB -and $bytes[2] -eq 0xBF) {
-        $bytes = $bytes[3..($bytes.Length - 1)]
-    }
-    $jsonText = [System.Text.Encoding]::UTF8.GetString($bytes).Trim()
-
-    $parsed = $jsonText | ConvertFrom-Json
-    $keys = Get-TopLevelKeys $parsed
-    if ($keys.Count -gt 0) {
-        return $parsed
+function Read-Config([string]$path) {
+    if (-not (Test-Path $path)) {
+        throw "No existe el archivo: $path"
     }
 
-    Add-Type -AssemblyName System.Web.Extensions
-    $serializer = New-Object System.Web.Script.Serialization.JavaScriptSerializer
-    $serializer.RecursionLimit = 100
-    return $serializer.DeserializeObject($jsonText)
+    $ext = [System.IO.Path]::GetExtension($path).ToLower()
+
+    if ($ext -eq '.psd1') {
+        try {
+            return Import-PowerShellDataFile -Path $path -ErrorAction Stop
+        } catch {
+            throw "Error importando '$path' (psd1): $_"
+        }
+    }
+    else {
+        # Soporte para JSON legacy
+        $fullPath = (Resolve-Path $path).ProviderPath
+        $bytes = [System.IO.File]::ReadAllBytes($fullPath)
+        if ($bytes.Length -ge 3 -and $bytes[0] -eq 0xEF -and $bytes[1] -eq 0xBB -and $bytes[2] -eq 0xBF) {
+            $bytes = $bytes[3..($bytes.Length - 1)]
+        }
+        $jsonText = [System.Text.Encoding]::UTF8.GetString($bytes).Trim()
+
+        if ([string]::IsNullOrWhiteSpace($jsonText) -or -not ($jsonText.StartsWith('{') -and $jsonText.EndsWith('}'))) {
+            throw "El archivo no parece un objeto JSON válido: $path"
+        }
+
+        return (ConvertFrom-Json -InputObject $jsonText)
+    }
 }
 
 $rawConfig = $null
 try {
-    $rawConfig = Read-ConfigJson $Config
+    $rawConfig = Read-Config $Config
 } catch {
-    Write-Host "ERROR parseando JSON: $_" -ForegroundColor Red
+    Write-Host "ERROR cargando config: $_" -ForegroundColor Red
     exit 1
 }
 
