@@ -1,7 +1,8 @@
 <#
 .SYNOPSIS
-    Despliegue simple e idempotente.
+    Despliegue simple e idempotente para Nginx (y futuros componentes).
     Edita config.json y ejecuta este archivo.
+    Compatible con PowerShell 5.1 (Windows Server) y PowerShell 7.
 #>
 [CmdletBinding()]
 param(
@@ -10,60 +11,90 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
-if (-not (Test-Path $Config)) { throw "No existe $Config" }
+if (-not (Test-Path $Config)) {
+    throw "No existe el archivo de configuracion: $Config"
+}
 
-# Compatible con PowerShell 5.1 (Windows Server) y PowerShell 7+
-# ConvertFrom-Json en PS 5.1 no tiene -AsHashtable
-$rawJson = Get-Content $Config -Raw | ConvertFrom-Json
+# =====================================================
+# Funciones base (definidas temprano)
+# =====================================================
+
+function Log($msg, $color = "White") {
+    $ts = Get-Date -Format "HH:mm:ss"
+    Write-Host "[$ts] $msg" -ForegroundColor $color
+}
 
 function ConvertTo-Hashtable {
     param($Object)
+
     if ($null -eq $Object) { return $null }
-    if ($Object -is [System.Collections.IEnumerable] -and -not ($Object -is [string])) {
-        $collection = @(
-            foreach ($item in $Object) { ConvertTo-Hashtable $item }
-        )
-        return $collection
-    }
-    elseif ($Object -is [psobject]) {
+
+    # CRITICO: Revisar psobject ANTES que IEnumerable
+    # porque en PS 5.1 PSCustomObject tambien es IEnumerable
+    if ($Object -is [psobject]) {
         $hash = @{}
         foreach ($prop in $Object.PSObject.Properties) {
             $hash[$prop.Name] = ConvertTo-Hashtable $prop.Value
         }
         return $hash
     }
-    else {
-        return $Object
+
+    if ($Object -is [System.Collections.IEnumerable] -and -not ($Object -is [string])) {
+        $collection = @(
+            foreach ($item in $Object) { ConvertTo-Hashtable $item }
+        )
+        return $collection
+    }
+
+    return $Object
+}
+
+function Get-ConfigKeys($obj) {
+    if ($null -eq $obj) { return @() }
+    if ($obj -is [hashtable]) { return @($obj.Keys) }
+    if ($obj -is [psobject])  { return @($obj.PSObject.Properties.Name) }
+    return @()
+}
+
+# =====================================================
+# Cargar y convertir configuracion
+# =====================================================
+
+$rawJson = Get-Content $Config -Raw | ConvertFrom-Json
+$config  = ConvertTo-Hashtable $rawJson
+
+if (-not ($config -is [hashtable])) {
+    Write-Host "ADVERTENCIA: No se pudo convertir a hashtable. Usando objeto original." -ForegroundColor Yellow
+    if ($rawJson -is [psobject]) {
+        $config = $rawJson
     }
 }
 
-$config = ConvertTo-Hashtable $rawJson
+# =====================================================
+# Preparar Server
+# =====================================================
 
-# Soporte flexible para server (acepta "name" o "appDrive" de versiones antiguas)
 $server = if ($config.server) { $config.server } else { @{} }
 
-# Normalizar drive / appDrive
+# Normalizar claves antiguas
 if (-not $server.drive -and $server.appDrive) {
     $server.drive = $server.appDrive
+}
+if (-not $server.name -and $server.serverName) {
+    $server.name = $server.serverName
 }
 
 $serverName = if ($server.name) { $server.name } else { "(sin nombre)" }
 Write-Host "=== Desplegando en $serverName ===" -ForegroundColor Cyan
 
-# Cargar helpers básicos (logging simple)
-function Log($msg, $color = "White") {
-    $ts = Get-Date -Format "HH:mm:ss"
-    Write-Host "[$ts] $msg" -ForegroundColor $color
-}
-
-# Debug: mostrar qué encontró
-Log "Claves en config.json: $($config.Keys -join ', ')" "DarkGray"
+$allKeys = Get-ConfigKeys $config
+Log "Claves en config.json: $($allKeys -join ', ')" "DarkGray"
 Log "Server detectado: name='$($server.name)' drive='$($server.drive)'" "DarkGray"
 
-# === Lógica de detección de componentes (flexible) ===
-# Soporta dos formatos:
-# 1. Plano (recomendado):  { "server": {...}, "nginx": { "enabled": true, ... } }
-# 2. Con wrapper:         { "server": {...}, "components": { "nginx": { "enabled": true } } }
+# =====================================================
+# Detectar componentes habilitados
+# Soporta formato plano o con "components"
+# =====================================================
 
 $searchSpace = $config
 if ($config.components) {
@@ -71,8 +102,10 @@ if ($config.components) {
     Log "Usando estructura con 'components'" "DarkGray"
 }
 
+$searchKeys = Get-ConfigKeys $searchSpace
+
 $components = @()
-foreach ($key in $searchSpace.Keys) {
+foreach ($key in $searchKeys) {
     if ($key -eq 'server') { continue }
     $comp = $searchSpace[$key]
     if ($comp -and $comp.enabled -eq $true) {
@@ -82,13 +115,16 @@ foreach ($key in $searchSpace.Keys) {
 
 if ($components.Count -eq 0) {
     Log "No hay componentes habilitados en config.json" "Yellow"
-    Log "Revisa que el bloque del servicio tenga 'enabled': true" "Yellow"
-    Log "Ejemplo esperado:" "DarkGray"
-    Log '  "nginx": { "enabled": true, ... }' "DarkGray"
+    Log "Revisa que tenga 'enabled': true" "Yellow"
+    Log 'Ejemplo: "nginx": { "enabled": true, ... }' "DarkGray"
     exit
 }
 
-Log "Componentes a instalar: $($components -join ', ')"
+Log "Componentes a instalar: $($components -join ', ')" "Cyan"
+
+# =====================================================
+# Ejecutar cada componente
+# =====================================================
 
 foreach ($name in $components) {
     $compCfg = $searchSpace[$name]
@@ -96,22 +132,22 @@ foreach ($name in $components) {
     $compScript = Join-Path $compDir "$name.ps1"
 
     if (-not (Test-Path $compScript)) {
-        Log "No existe lógica para '$name' en $compScript" "Red"
+        Log "No existe logica para '$name' → $compScript" "Red"
         continue
     }
 
     Log "Procesando componente: $name" "Cyan"
 
-    # Cargar el script del componente (dot-source simple)
+    # Dot-source del script del componente
     . $compScript
 
-    # Convención: "nginx" → Install-NginxComponent
+    # Nombre de funcion esperado: Install-NginxComponent, Install-ApacheComponent, etc.
     $funcName = "Install-" + $name.Substring(0,1).ToUpper() + $name.Substring(1) + "Component"
 
     if (Get-Command $funcName -ErrorAction SilentlyContinue) {
         & $funcName -cfg $compCfg -serverCfg $server
     } else {
-        Log "Función esperada no encontrada: $funcName" "Yellow"
+        Log "No se encontro la funcion $funcName en $compScript" "Yellow"
     }
 }
 

@@ -1,11 +1,12 @@
-# Componente Nginx - Lógica de instalación
-# Se carga dinámicamente desde deploy.ps1
+# Componente Nginx - Logica de instalacion
+# Se carga dinamicamente desde deploy.ps1
 
 function Install-NginxComponent {
     param($cfg, $serverCfg)
 
-    $drive = if ($serverCfg.drive) { $serverCfg.drive } 
-             elseif ($serverCfg.appDrive) { $serverCfg.appDrive } 
+    $drv = $serverCfg
+    $drive = if ($drv.drive) { $drv.drive } 
+             elseif ($drv.appDrive) { $drv.appDrive } 
              else { "D:" }
     $paths = $cfg.paths
     if (-not $paths) {
@@ -21,7 +22,7 @@ function Install-NginxComponent {
     $cache = "$drive\downloads\cache"
     New-Item -ItemType Directory -Path $cache, $paths.install, $paths.config, $paths.data, $paths.logs -Force | Out-Null
 
-    # Crear carpeta www + index básico si no existe (separación de datos)
+    # Crear carpeta www + index basico si no existe (separacion de datos)
     $www = Join-Path $paths.data "www"
     New-Item -ItemType Directory -Path $www -Force | Out-Null
     $index = Join-Path $www "index.html"
@@ -40,7 +41,7 @@ function Install-NginxComponent {
 
     # 2. Extraer solo si no existe (idempotencia)
     if (-not (Test-Path $exe)) {
-        Write-Host "[nginx] Extrayendo versión $($cfg.version)..." -ForegroundColor Cyan
+        Write-Host "[nginx] Extrayendo version $($cfg.version)..." -ForegroundColor Cyan
         Expand-Archive -Path $zip -DestinationPath $paths.install -Force
         # El zip suele crear nginx-1.30.3\, lo movemos
         $sub = Get-ChildItem $paths.install -Directory | Where-Object { $_.Name -like "nginx*" } | Select-Object -First 1
@@ -50,7 +51,7 @@ function Install-NginxComponent {
         }
     }
 
-    # 3. Desplegar configuración (solo si cambió)
+    # 3. Desplegar configuracion (solo si cambio)
     $tpl = Join-Path $PSScriptRoot "nginx.conf"
     $targetConf = Join-Path $paths.config "nginx.conf"
 
@@ -68,12 +69,12 @@ function Install-NginxComponent {
     if ($needsUpdate) {
         Copy-Item $targetConf "$targetConf.bak" -ErrorAction SilentlyContinue -Force
         Set-Content -Path $targetConf -Value $content -Encoding UTF8
-        Write-Host "[nginx] Configuración actualizada." -ForegroundColor Green
+        Write-Host "[nginx] Configuracion actualizada." -ForegroundColor Green
     }
 
     # Probar sintaxis (compatible PS 5.1)
     & $exe -t -c $targetConf 2>&1 | Out-Null
-    if ($LASTEXITCODE -ne 0) { throw "[nginx] La configuración tiene errores" }
+    if ($LASTEXITCODE -ne 0) { throw "[nginx] La configuracion tiene errores" }
 
     # 4. Servicio (NSSM preferido)
     $svcName = $cfg.service.name
@@ -145,4 +146,4 @@ function Test-NginxComponent {
     }
 }
 
-Export-ModuleMember -Function Install-NginxComponent, Test-NginxComponent
+# Nota: Se usa dot-sourcing desde deploy.ps1, no es necesario Export-ModuleMember
