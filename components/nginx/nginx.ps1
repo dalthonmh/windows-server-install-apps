@@ -75,9 +75,12 @@ function Install-NginxComponent {
     $targetConf = Join-Path (Get-Property $paths 'config') "nginx.conf"
 
     $content = Get-Content $tpl -Raw
-    $content = $content -replace '{{logPath}}',  (Get-Property $paths 'logs') `
-                         -replace '{{dataPath}}', (Get-Property $paths 'data') `
-                         -replace '{{port}}',     (Get-Property $cfg 'port')
+    $logP = Get-Property $paths 'logs'
+    $dataP = Get-Property $paths 'data'
+    $portV = Get-Property $cfg 'port'
+    $content = $content.Replace('{{logPath}}', [string]$logP) `
+                       .Replace('{{dataPath}}', [string]$dataP) `
+                       .Replace('{{port}}', [string]$portV)
 
     $needsUpdate = $true
     if (Test-Path $targetConf) {
@@ -92,12 +95,17 @@ function Install-NginxComponent {
     }
 
     # Probar sintaxis (compatible PS 5.1)
-    & $exe -t -c $targetConf 2>&1 | Out-Null
-    if ($LASTEXITCODE -ne 0) { throw "[nginx] La configuracion tiene errores" }
+    $testOutput = & $exe -t -c $targetConf 2>&1
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "[nginx] Error en configuracion:" -ForegroundColor Red
+        Write-Host ($testOutput | Out-String) -ForegroundColor Red
+        throw "[nginx] La configuracion tiene errores (ver arriba)"
+    }
 
     # 4. Servicio (NSSM preferido)
     $svcName = Get-Property (Get-Property $cfg 'service') 'name'
-    $nssm = "D:\apps\nssm\nssm.exe"
+    $nssmDir = "$drive\apps\nssm"
+    $nssm = Join-Path $nssmDir "nssm.exe"
 
     # Auto-descarga NSSM (una sola vez)
     if (-not (Test-Path $nssm) -and (Get-Property (Get-Property $cfg 'service') 'useNssm') -ne $false) {

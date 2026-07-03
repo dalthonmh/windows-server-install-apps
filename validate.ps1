@@ -45,7 +45,7 @@ function Read-ConfigJson([string]$path) {
     }
     $jsonText = [System.Text.Encoding]::UTF8.GetString($bytes).Trim()
 
-    $parsed = ConvertFrom-Json -InputObject (,$jsonText)
+    $parsed = $jsonText | ConvertFrom-Json
     $keys = Get-TopLevelKeys $parsed
     if ($keys.Count -gt 0) {
         return $parsed

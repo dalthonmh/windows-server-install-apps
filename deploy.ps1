@@ -62,9 +62,9 @@ function Read-ConfigJson([string]$path) {
         throw "El archivo JSON debe ser un objeto (empezar con { y terminar con })"
     }
 
-    # PS 5.1: el string implementa IEnumerable<char> y ConvertFrom-Json lo trocea.
-    # La coma fuerza un solo argumento con el JSON completo.
-    $parsed = ConvertFrom-Json -InputObject (,$jsonText)
+    # PS 5.1 compatibility: pipe the full string so it is not enumerated as chars.
+    # Using pipeline ensures ConvertFrom-Json receives the complete JSON as one item.
+    $parsed = $jsonText | ConvertFrom-Json
 
     $keys = Get-TopLevelKeys $parsed
     if ($keys.Count -gt 0) {
