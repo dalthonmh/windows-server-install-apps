@@ -16,9 +16,11 @@ if (-not (Test-Path $Config)) {
 
 function Get-TopLevelKeys($obj) {
     if ($null -eq $obj) { return @() }
+    if ($obj -is [string]) { return @() }
     if ($obj -is [hashtable]) { return @($obj.Keys) }
-    if ($obj.PSObject) {
-        return @($obj.PSObject.Properties.Name)
+    if ($obj -is [System.Collections.IDictionary]) { return @($obj.Keys) }
+    if ($obj -is [psobject]) {
+        return @($obj.PSObject.Properties | ForEach-Object { $_.Name })
     }
     return @()
 }
@@ -29,12 +31,51 @@ function Get-Property($obj, [string]$name) {
         if ($obj.ContainsKey($name)) { return $obj[$name] }
         return $null
     }
-    if ($obj.PSObject) {
+    if ($obj -is [System.Collections.IDictionary]) {
+        if ($obj.Contains($name)) { return $obj[$name] }
+        return $null
+    }
+    if ($obj -is [psobject]) {
         $prop = $obj.PSObject.Properties[$name]
         if ($prop) { return $prop.Value }
         return $null
     }
     return $null
+}
+
+function Test-IsEnabled($value) {
+    return $value -eq $true -or $value -eq 'true' -or $value -eq 1
+}
+
+function Read-ConfigJson([string]$path) {
+    $fullPath = (Resolve-Path $path).ProviderPath
+    $bytes = [System.IO.File]::ReadAllBytes($fullPath)
+    if ($bytes.Length -ge 3 -and $bytes[0] -eq 0xEF -and $bytes[1] -eq 0xBB -and $bytes[2] -eq 0xBF) {
+        $bytes = $bytes[3..($bytes.Length - 1)]
+    }
+    $jsonText = [System.Text.Encoding]::UTF8.GetString($bytes).Trim()
+
+    if ([string]::IsNullOrWhiteSpace($jsonText)) {
+        throw "El archivo JSON esta vacio: $path"
+    }
+    if (-not ($jsonText.StartsWith('{') -and $jsonText.EndsWith('}'))) {
+        throw "El archivo JSON debe ser un objeto (empezar con { y terminar con })"
+    }
+
+    # PS 5.1: el string implementa IEnumerable<char> y ConvertFrom-Json lo trocea.
+    # La coma fuerza un solo argumento con el JSON completo.
+    $parsed = ConvertFrom-Json -InputObject (,$jsonText)
+
+    $keys = Get-TopLevelKeys $parsed
+    if ($keys.Count -gt 0) {
+        return $parsed
+    }
+
+    # Fallback para PS 5.1 cuando ConvertFrom-Json no deserializa propiedades.
+    Add-Type -AssemblyName System.Web.Extensions
+    $serializer = New-Object System.Web.Script.Serialization.JavaScriptSerializer
+    $serializer.RecursionLimit = 100
+    return $serializer.DeserializeObject($jsonText)
 }
 
 function Log($msg, $color = "White") {
@@ -43,27 +84,14 @@ function Log($msg, $color = "White") {
 }
 
 # === Carga robusta del JSON para PS 5.1 ===
-$fullPath = (Resolve-Path $Config).ProviderPath
-$jsonText = [System.IO.File]::ReadAllText($fullPath)
-
-# Debug: mostrar lo que realmente leyo
-Log "Longitud del archivo JSON: $($jsonText.Length)" "DarkGray"
-if ($jsonText.Length -gt 0) {
-    $preview = $jsonText.Substring(0, [Math]::Min(200, $jsonText.Length))
-    Log "Primeros chars del JSON: $preview" "DarkGray"
-}
-
-$rawConfig = $null
 try {
-    $rawConfig = ConvertFrom-Json -InputObject $jsonText
+    $config = Read-ConfigJson $Config
 } catch {
-    Log "ERROR al hacer ConvertFrom-Json: $_" "Red"
+    Log "ERROR leyendo config.json: $_" "Red"
     throw
 }
 
-Log "Tipo de objeto despues de ConvertFrom-Json: $($rawConfig.GetType().FullName)" "Yellow"
-
-$config = $rawConfig
+Log "Tipo de objeto config: $($config.GetType().FullName)" "Yellow"
 
 $allKeys = Get-TopLevelKeys $config
 Log "Claves en config.json: $($allKeys -join ', ')" "DarkGray"
@@ -96,7 +124,7 @@ foreach ($key in $searchKeys) {
     if ($key -eq 'server') { continue }
     $comp = Get-Property $searchSpace $key
     $enabled = Get-Property $comp 'enabled'
-    if ($comp -and $enabled -eq $true) {
+    if ($comp -and (Test-IsEnabled $enabled)) {
         $components += $key
     }
 }

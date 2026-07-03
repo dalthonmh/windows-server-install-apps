@@ -4,21 +4,14 @@
 #>
 param([string]$Config = "config.json")
 
-$fullPath = (Resolve-Path $Config).ProviderPath
-$jsonText = [System.IO.File]::ReadAllText($fullPath)
-
-$rawConfig = $null
-try {
-    $rawConfig = ConvertFrom-Json -InputObject $jsonText
-} catch {
-    Write-Host "ERROR parseando JSON: $_" -ForegroundColor Red
-    exit 1
-}
-
 function Get-TopLevelKeys($obj) {
     if ($null -eq $obj) { return @() }
+    if ($obj -is [string]) { return @() }
     if ($obj -is [hashtable]) { return @($obj.Keys) }
-    if ($obj.PSObject) { return @($obj.PSObject.Properties.Name) }
+    if ($obj -is [System.Collections.IDictionary]) { return @($obj.Keys) }
+    if ($obj -is [psobject]) {
+        return @($obj.PSObject.Properties | ForEach-Object { $_.Name })
+    }
     return @()
 }
 
@@ -28,12 +21,48 @@ function Get-Property($obj, [string]$name) {
         if ($obj.ContainsKey($name)) { return $obj[$name] }
         return $null
     }
-    if ($obj.PSObject) {
+    if ($obj -is [System.Collections.IDictionary]) {
+        if ($obj.Contains($name)) { return $obj[$name] }
+        return $null
+    }
+    if ($obj -is [psobject]) {
         $prop = $obj.PSObject.Properties[$name]
         if ($prop) { return $prop.Value }
         return $null
     }
     return $null
+}
+
+function Test-IsEnabled($value) {
+    return $value -eq $true -or $value -eq 'true' -or $value -eq 1
+}
+
+function Read-ConfigJson([string]$path) {
+    $fullPath = (Resolve-Path $path).ProviderPath
+    $bytes = [System.IO.File]::ReadAllBytes($fullPath)
+    if ($bytes.Length -ge 3 -and $bytes[0] -eq 0xEF -and $bytes[1] -eq 0xBB -and $bytes[2] -eq 0xBF) {
+        $bytes = $bytes[3..($bytes.Length - 1)]
+    }
+    $jsonText = [System.Text.Encoding]::UTF8.GetString($bytes).Trim()
+
+    $parsed = ConvertFrom-Json -InputObject (,$jsonText)
+    $keys = Get-TopLevelKeys $parsed
+    if ($keys.Count -gt 0) {
+        return $parsed
+    }
+
+    Add-Type -AssemblyName System.Web.Extensions
+    $serializer = New-Object System.Web.Script.Serialization.JavaScriptSerializer
+    $serializer.RecursionLimit = 100
+    return $serializer.DeserializeObject($jsonText)
+}
+
+$rawConfig = $null
+try {
+    $rawConfig = Read-ConfigJson $Config
+} catch {
+    Write-Host "ERROR parseando JSON: $_" -ForegroundColor Red
+    exit 1
 }
 
 Write-Host "=== Validacion ===" -ForegroundColor Cyan
@@ -50,7 +79,7 @@ foreach ($key in $searchKeys) {
     if ($key -eq 'server') { continue }
     $comp = Get-Property $searchSpace $key
     $enabled = Get-Property $comp 'enabled'
-    if (-not $enabled) { continue }
+    if (-not (Test-IsEnabled $enabled)) { continue }
 
     $name = $key
     $compScript = ".\components\$name\$name.ps1"

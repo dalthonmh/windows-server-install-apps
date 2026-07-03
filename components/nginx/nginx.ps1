@@ -7,7 +7,11 @@ function Get-Property($obj, [string]$name) {
         if ($obj.ContainsKey($name)) { return $obj[$name] }
         return $null
     }
-    if ($obj.PSObject) {
+    if ($obj -is [System.Collections.IDictionary]) {
+        if ($obj.Contains($name)) { return $obj[$name] }
+        return $null
+    }
+    if ($obj -is [psobject]) {
         $prop = $obj.PSObject.Properties[$name]
         if ($prop) { return $prop.Value }
         return $null
