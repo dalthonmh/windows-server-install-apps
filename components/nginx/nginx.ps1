@@ -1,12 +1,26 @@
 # Componente Nginx - Logica de instalacion
 # Se carga dinamicamente desde deploy.ps1
 
+function Get-Property($obj, [string]$name) {
+    if ($null -eq $obj -or [string]::IsNullOrEmpty($name)) { return $null }
+    if ($obj -is [hashtable]) {
+        if ($obj.ContainsKey($name)) { return $obj[$name] }
+        return $null
+    }
+    if ($obj -is [psobject]) {
+        $prop = $obj.PSObject.Properties[$name]
+        if ($prop) { return $prop.Value }
+        return $null
+    }
+    return $null
+}
+
 function Install-NginxComponent {
     param($cfg, $serverCfg)
 
     $drv = $serverCfg
-    $drive = if ($drv.drive) { $drv.drive } 
-             elseif ($drv.appDrive) { $drv.appDrive } 
+    $drive = if ($drv -and (Get-Property $drv 'drive')) { (Get-Property $drv 'drive') } 
+             elseif ($drv -and (Get-Property $drv 'appDrive')) { (Get-Property $drv 'appDrive') } 
              else { "D:" }
     $paths = $cfg.paths
     if (-not $paths) {

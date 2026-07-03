@@ -4,56 +4,46 @@
 #>
 param([string]$Config = "config.json")
 
-$rawJson = Get-Content $Config -Raw | ConvertFrom-Json
+$fullPath = (Resolve-Path $Config).ProviderPath
+$jsonText = [System.IO.File]::ReadAllText($fullPath, [Text.Encoding]::UTF8)
+$rawConfig = ConvertFrom-Json -InputObject $jsonText
 
-function ConvertTo-Hashtable {
-    param($Object)
-
-    if ($null -eq $Object) { return $null }
-
-    if ($Object -is [psobject]) {
-        $hash = @{}
-        foreach ($prop in $Object.PSObject.Properties) {
-            $hash[$prop.Name] = ConvertTo-Hashtable $prop.Value
-        }
-        return $hash
-    }
-
-    if ($Object -is [System.Collections.IEnumerable] -and -not ($Object -is [string])) {
-        $collection = @(
-            foreach ($item in $Object) { ConvertTo-Hashtable $item }
-        )
-        return $collection
-    }
-
-    return $Object
-}
-
-function Get-ConfigKeys($obj) {
+function Get-TopLevelKeys($obj) {
     if ($null -eq $obj) { return @() }
     if ($obj -is [hashtable]) { return @($obj.Keys) }
-    if ($obj -is [psobject])  { return @($obj.PSObject.Properties.Name) }
+    if ($obj -is [psobject]) { return @($obj.PSObject.Properties.Name) }
     return @()
 }
 
-$config = ConvertTo-Hashtable $rawJson
-
-if (-not ($config -is [hashtable])) {
-    Write-Host "ADVERTENCIA: Conversion fallida. Tipo: $($config.GetType().Name)" -ForegroundColor Yellow
+function Get-Property($obj, [string]$name) {
+    if ($null -eq $obj -or [string]::IsNullOrEmpty($name)) { return $null }
+    if ($obj -is [hashtable]) {
+        if ($obj.ContainsKey($name)) { return $obj[$name] }
+        return $null
+    }
+    if ($obj -is [psobject]) {
+        $prop = $obj.PSObject.Properties[$name]
+        if ($prop) { return $prop.Value }
+        return $null
+    }
+    return $null
 }
 
 Write-Host "=== Validacion ===" -ForegroundColor Cyan
 
-$searchSpace = $config
-if ($config.components) {
-    $searchSpace = $config.components
+$searchSpace = $rawConfig
+$componentsSection = Get-Property $rawConfig 'components'
+if ($componentsSection) {
+    $searchSpace = $componentsSection
 }
 
-$searchKeys = Get-ConfigKeys $searchSpace
+$searchKeys = Get-TopLevelKeys $searchSpace
 
 foreach ($key in $searchKeys) {
     if ($key -eq 'server') { continue }
-    if (-not $searchSpace[$key].enabled) { continue }
+    $comp = Get-Property $searchSpace $key
+    $enabled = Get-Property $comp 'enabled'
+    if (-not $enabled) { continue }
 
     $name = $key
     $compScript = ".\components\$name\$name.ps1"
@@ -62,12 +52,15 @@ foreach ($key in $searchKeys) {
         . $compScript
         $testFunc = "Test-" + $name.Substring(0,1).ToUpper() + $name.Substring(1) + "Component"
         if (Get-Command $testFunc -ErrorAction SilentlyContinue) {
-            & $testFunc -cfg $searchSpace[$key] -serverCfg $config.server
+            & $testFunc -cfg $comp -serverCfg (Get-Property $rawConfig 'server')
         }
     }
 
     # Validacion basica de servicio
-    $svcName = $searchSpace[$key].service.name
+    $svcName = Get-Property $comp 'service'
+    if ($svcName) {
+        $svcName = Get-Property $svcName 'name'
+    }
     if ($svcName) {
         $svc = Get-Service $svcName -ErrorAction SilentlyContinue
         if ($svc) {

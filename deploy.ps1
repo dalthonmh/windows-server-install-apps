@@ -2,7 +2,7 @@
 .SYNOPSIS
     Despliegue simple e idempotente para Nginx (y futuros componentes).
     Edita config.json y ejecuta este archivo.
-    Compatible con PowerShell 5.1 (Windows Server) y PowerShell 7.
+    Compatible con PowerShell 5.1 (Windows Server).
 #>
 [CmdletBinding()]
 param(
@@ -16,99 +16,93 @@ if (-not (Test-Path $Config)) {
 }
 
 # =====================================================
-# Funciones base (definidas temprano)
+# Funciones seguras para PSCustomObject y Hashtable (PS 5.1 compatible)
 # =====================================================
+
+function Get-TopLevelKeys($obj) {
+    if ($null -eq $obj) { return @() }
+    if ($obj -is [hashtable]) { return @($obj.Keys) }
+    if ($obj -is [psobject]) { return @($obj.PSObject.Properties.Name) }
+    return @()
+}
+
+function Get-Property($obj, [string]$name) {
+    if ($null -eq $obj -or [string]::IsNullOrEmpty($name)) { return $null }
+    if ($obj -is [hashtable]) {
+        if ($obj.ContainsKey($name)) { return $obj[$name] }
+        return $null
+    }
+    if ($obj -is [psobject]) {
+        $prop = $obj.PSObject.Properties[$name]
+        if ($prop) { return $prop.Value }
+        return $null
+    }
+    return $null
+}
 
 function Log($msg, $color = "White") {
     $ts = Get-Date -Format "HH:mm:ss"
     Write-Host "[$ts] $msg" -ForegroundColor $color
 }
 
-function ConvertTo-Hashtable {
-    param($Object)
-
-    if ($null -eq $Object) { return $null }
-
-    # CRITICO: Revisar psobject ANTES que IEnumerable
-    # porque en PS 5.1 PSCustomObject tambien es IEnumerable
-    if ($Object -is [psobject]) {
-        $hash = @{}
-        foreach ($prop in $Object.PSObject.Properties) {
-            $hash[$prop.Name] = ConvertTo-Hashtable $prop.Value
-        }
-        return $hash
-    }
-
-    if ($Object -is [System.Collections.IEnumerable] -and -not ($Object -is [string])) {
-        $collection = @(
-            foreach ($item in $Object) { ConvertTo-Hashtable $item }
-        )
-        return $collection
-    }
-
-    return $Object
-}
-
-function Get-ConfigKeys($obj) {
-    if ($null -eq $obj) { return @() }
-    if ($obj -is [hashtable]) { return @($obj.Keys) }
-    if ($obj -is [psobject])  { return @($obj.PSObject.Properties.Name) }
-    return @()
-}
-
 # =====================================================
-# Cargar y convertir configuracion
+# Cargar JSON de forma robusta (PS 5.1)
 # =====================================================
 
-$rawJson = Get-Content $Config -Raw | ConvertFrom-Json
-$config  = ConvertTo-Hashtable $rawJson
-
-if (-not ($config -is [hashtable])) {
-    Write-Host "ADVERTENCIA: No se pudo convertir a hashtable. Usando objeto original." -ForegroundColor Yellow
-    if ($rawJson -is [psobject]) {
-        $config = $rawJson
-    }
+try {
+    # Usar File.ReadAllText para evitar problemas de encoding/BOM de Get-Content
+    $fullPath = (Resolve-Path $Config).ProviderPath
+    $jsonText = [System.IO.File]::ReadAllText($fullPath, [Text.Encoding]::UTF8)
+    $rawConfig = ConvertFrom-Json -InputObject $jsonText
+} catch {
+    throw "Error leyendo o parseando el JSON: $($_.Exception.Message)"
 }
+
+# Trabajamos directamente con el objeto de ConvertFrom-Json (PSCustomObject)
+$config = $rawConfig
+
+$allKeys = Get-TopLevelKeys $config
+Log "Claves en config.json: $($allKeys -join ', ')" "DarkGray"
 
 # =====================================================
 # Preparar Server
 # =====================================================
 
-$server = if ($config.server) { $config.server } else { @{} }
+$server = Get-Property $config 'server'
+if (-not $server) { $server = @{} }
 
 # Normalizar claves antiguas
-if (-not $server.drive -and $server.appDrive) {
-    $server.drive = $server.appDrive
+$driveVal = Get-Property $server 'drive'
+if (-not $driveVal) {
+    $driveVal = Get-Property $server 'appDrive'
 }
-if (-not $server.name -and $server.serverName) {
-    $server.name = $server.serverName
-}
+if (-not $driveVal) { $driveVal = "D:" }
 
-$serverName = if ($server.name) { $server.name } else { "(sin nombre)" }
+$serverName = Get-Property $server 'name'
+if (-not $serverName) { $serverName = "(sin nombre)" }
+
 Write-Host "=== Desplegando en $serverName ===" -ForegroundColor Cyan
-
-$allKeys = Get-ConfigKeys $config
-Log "Claves en config.json: $($allKeys -join ', ')" "DarkGray"
-Log "Server detectado: name='$($server.name)' drive='$($server.drive)'" "DarkGray"
+Log "Server detectado: name='$serverName' drive='$driveVal'" "DarkGray"
 
 # =====================================================
-# Detectar componentes habilitados
-# Soporta formato plano o con "components"
+# Detectar componentes habilitados (soporta plano o "components")
 # =====================================================
 
 $searchSpace = $config
-if ($config.components) {
-    $searchSpace = $config.components
+$componentsSection = Get-Property $config 'components'
+if ($componentsSection) {
+    $searchSpace = $componentsSection
     Log "Usando estructura con 'components'" "DarkGray"
 }
 
-$searchKeys = Get-ConfigKeys $searchSpace
+$searchKeys = Get-TopLevelKeys $searchSpace
 
 $components = @()
 foreach ($key in $searchKeys) {
     if ($key -eq 'server') { continue }
-    $comp = $searchSpace[$key]
-    if ($comp -and $comp.enabled -eq $true) {
+    $comp = Get-Property $searchSpace $key
+    $enabled = Get-Property $comp 'enabled'
+    if ($comp -and $enabled -eq $true) {
         $components += $key
     }
 }
@@ -127,7 +121,7 @@ Log "Componentes a instalar: $($components -join ', ')" "Cyan"
 # =====================================================
 
 foreach ($name in $components) {
-    $compCfg = $searchSpace[$name]
+    $compCfg = Get-Property $searchSpace $name
     $compDir = Join-Path "components" $name
     $compScript = Join-Path $compDir "$name.ps1"
 
@@ -138,10 +132,9 @@ foreach ($name in $components) {
 
     Log "Procesando componente: $name" "Cyan"
 
-    # Dot-source del script del componente
+    # Dot-source
     . $compScript
 
-    # Nombre de funcion esperado: Install-NginxComponent, Install-ApacheComponent, etc.
     $funcName = "Install-" + $name.Substring(0,1).ToUpper() + $name.Substring(1) + "Component"
 
     if (Get-Command $funcName -ErrorAction SilentlyContinue) {
