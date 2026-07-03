@@ -1,6 +1,29 @@
 param([string]$Config = "config.json")
 
-$config = Get-Content $Config -Raw | ConvertFrom-Json -AsHashtable
+$rawJson = Get-Content $Config -Raw | ConvertFrom-Json
+
+function ConvertTo-Hashtable {
+    param($Object)
+    if ($null -eq $Object) { return $null }
+    if ($Object -is [System.Collections.IEnumerable] -and -not ($Object -is [string])) {
+        $collection = @(
+            foreach ($item in $Object) { ConvertTo-Hashtable $item }
+        )
+        return $collection
+    }
+    elseif ($Object -is [psobject]) {
+        $hash = @{}
+        foreach ($prop in $Object.PSObject.Properties) {
+            $hash[$prop.Name] = ConvertTo-Hashtable $prop.Value
+        }
+        return $hash
+    }
+    else {
+        return $Object
+    }
+}
+
+$config = ConvertTo-Hashtable $rawJson
 
 Write-Host "=== Validación ===" -ForegroundColor Cyan
 

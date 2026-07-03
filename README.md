@@ -4,6 +4,8 @@ Instalador simple, declarativo e idempotente para Nginx (y otros servicios) en W
 
 ## Ejecutar (4 pasos)
 
+> **Importante**: Funciona en PowerShell 5.1 (el que viene por defecto en Windows Server) y PowerShell 7.
+
 1. En el servidor Windows (PowerShell como Administrador):
 
 ```powershell

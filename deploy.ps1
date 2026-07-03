@@ -12,8 +12,34 @@ $ErrorActionPreference = 'Stop'
 
 if (-not (Test-Path $Config)) { throw "No existe $Config" }
 
-$config = Get-Content $Config -Raw | ConvertFrom-Json -AsHashtable
+# Compatible con PowerShell 5.1 (Windows Server) y PowerShell 7+
+# ConvertFrom-Json en PS 5.1 no tiene -AsHashtable
+$rawJson = Get-Content $Config -Raw | ConvertFrom-Json
+
+function ConvertTo-Hashtable {
+    param($Object)
+    if ($null -eq $Object) { return $null }
+    if ($Object -is [System.Collections.IEnumerable] -and -not ($Object -is [string])) {
+        $collection = @(
+            foreach ($item in $Object) { ConvertTo-Hashtable $item }
+        )
+        return $collection
+    }
+    elseif ($Object -is [psobject]) {
+        $hash = @{}
+        foreach ($prop in $Object.PSObject.Properties) {
+            $hash[$prop.Name] = ConvertTo-Hashtable $prop.Value
+        }
+        return $hash
+    }
+    else {
+        return $Object
+    }
+}
+
+$config = ConvertTo-Hashtable $rawJson
 $server = $config.server
+if ($null -eq $server) { $server = @{} }
 
 Write-Host "=== Desplegando en $($server.name) ===" -ForegroundColor Cyan
 

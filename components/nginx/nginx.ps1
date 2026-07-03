@@ -69,8 +69,8 @@ function Install-NginxComponent {
         Write-Host "[nginx] Configuración actualizada." -ForegroundColor Green
     }
 
-    # Probar sintaxis
-    & $exe -t -c $targetConf *> $null
+    # Probar sintaxis (compatible PS 5.1)
+    & $exe -t -c $targetConf 2>&1 | Out-Null
     if ($LASTEXITCODE -ne 0) { throw "[nginx] La configuración tiene errores" }
 
     # 4. Servicio (NSSM preferido)
