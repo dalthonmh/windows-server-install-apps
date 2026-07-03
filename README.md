@@ -19,11 +19,34 @@ git clone https://github.com/dalthonmh/windows-server-install-apps.git C:\deploy
 cd C:\deploy\install-apps
 ```
 
-3. Edita `config.json` (solo este archivo):
+3. Edita `config.json` (solo este archivo) — usa esta estructura exacta:
 
-- Cambia `server.name`
-- Ajusta `nginx.url` si usas tu dominio
-- Cambia puerto o paths si quieres
+```json
+{
+  "server": {
+    "name": "MI-SERVIDOR",
+    "drive": "D:"
+  },
+  "nginx": {
+    "enabled": true,
+    "version": "1.30.3",
+    "url": "https://dalthonmh.com/bin/nginx-1.30.3.zip",
+    "port": 80,
+    "paths": {
+      "install": "D:\\apps\\nginx\\1.30.3",
+      "config": "D:\\config\\nginx",
+      "data": "D:\\data\\nginx",
+      "logs": "D:\\logs\\nginx"
+    },
+    "service": {
+      "name": "Nginx",
+      "displayName": "Nginx Web Server"
+    }
+  }
+}
+```
+
+Importante: debe tener `"enabled": true` y ser JSON válido (sin comentarios).
 
 4. Ejecuta:
 

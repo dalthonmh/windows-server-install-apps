@@ -4,7 +4,9 @@
 function Install-NginxComponent {
     param($cfg, $serverCfg)
 
-    $drive = if ($serverCfg.drive) { $serverCfg.drive } else { "D:" }
+    $drive = if ($serverCfg.drive) { $serverCfg.drive } 
+             elseif ($serverCfg.appDrive) { $serverCfg.appDrive } 
+             else { "D:" }
     $paths = $cfg.paths
     if (-not $paths) {
         $ver = $cfg.version

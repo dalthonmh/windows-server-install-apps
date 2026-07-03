@@ -27,9 +27,15 @@ $config = ConvertTo-Hashtable $rawJson
 
 Write-Host "=== Validación ===" -ForegroundColor Cyan
 
-foreach ($key in $config.Keys) {
+# Soporte flexible (igual que deploy.ps1)
+$searchSpace = $config
+if ($config.components) {
+    $searchSpace = $config.components
+}
+
+foreach ($key in $searchSpace.Keys) {
     if ($key -eq 'server') { continue }
-    if (-not $config[$key].enabled) { continue }
+    if (-not $searchSpace[$key].enabled) { continue }
 
     $name = $key
     $compScript = ".\components\$name\$name.ps1"
@@ -38,12 +44,12 @@ foreach ($key in $config.Keys) {
         . $compScript
         $testFunc = "Test-" + $name.Substring(0,1).ToUpper() + $name.Substring(1) + "Component"
         if (Get-Command $testFunc -ErrorAction SilentlyContinue) {
-            & $testFunc -cfg $config[$key] -serverCfg $config.server
+            & $testFunc -cfg $searchSpace[$key] -serverCfg $config.server
         }
     }
 
     # Validación básica de servicio
-    $svcName = $config[$key].service.name
+    $svcName = $searchSpace[$key].service.name
     if ($svcName) {
         $svc = Get-Service $svcName -ErrorAction SilentlyContinue
         Write-Host "$svcName : $($svc.Status)"

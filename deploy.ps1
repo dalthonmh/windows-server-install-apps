@@ -38,10 +38,17 @@ function ConvertTo-Hashtable {
 }
 
 $config = ConvertTo-Hashtable $rawJson
-$server = $config.server
-if ($null -eq $server) { $server = @{} }
 
-Write-Host "=== Desplegando en $($server.name) ===" -ForegroundColor Cyan
+# Soporte flexible para server (acepta "name" o "appDrive" de versiones antiguas)
+$server = if ($config.server) { $config.server } else { @{} }
+
+# Normalizar drive / appDrive
+if (-not $server.drive -and $server.appDrive) {
+    $server.drive = $server.appDrive
+}
+
+$serverName = if ($server.name) { $server.name } else { "(sin nombre)" }
+Write-Host "=== Desplegando en $serverName ===" -ForegroundColor Cyan
 
 # Cargar helpers básicos (logging simple)
 function Log($msg, $color = "White") {
@@ -49,24 +56,42 @@ function Log($msg, $color = "White") {
     Write-Host "[$ts] $msg" -ForegroundColor $color
 }
 
-# Detectar componentes habilitados
+# Debug: mostrar qué encontró
+Log "Claves en config.json: $($config.Keys -join ', ')" "DarkGray"
+Log "Server detectado: name='$($server.name)' drive='$($server.drive)'" "DarkGray"
+
+# === Lógica de detección de componentes (flexible) ===
+# Soporta dos formatos:
+# 1. Plano (recomendado):  { "server": {...}, "nginx": { "enabled": true, ... } }
+# 2. Con wrapper:         { "server": {...}, "components": { "nginx": { "enabled": true } } }
+
+$searchSpace = $config
+if ($config.components) {
+    $searchSpace = $config.components
+    Log "Usando estructura con 'components'" "DarkGray"
+}
+
 $components = @()
-foreach ($key in $config.Keys) {
-    if ($key -in @('server')) { continue }
-    if ($config[$key].enabled -eq $true) {
+foreach ($key in $searchSpace.Keys) {
+    if ($key -eq 'server') { continue }
+    $comp = $searchSpace[$key]
+    if ($comp -and $comp.enabled -eq $true) {
         $components += $key
     }
 }
 
 if ($components.Count -eq 0) {
     Log "No hay componentes habilitados en config.json" "Yellow"
+    Log "Revisa que el bloque del servicio tenga 'enabled': true" "Yellow"
+    Log "Ejemplo esperado:" "DarkGray"
+    Log '  "nginx": { "enabled": true, ... }' "DarkGray"
     exit
 }
 
 Log "Componentes a instalar: $($components -join ', ')"
 
 foreach ($name in $components) {
-    $compCfg = $config[$name]
+    $compCfg = $searchSpace[$name]
     $compDir = Join-Path "components" $name
     $compScript = Join-Path $compDir "$name.ps1"
 
