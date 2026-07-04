@@ -212,19 +212,59 @@ function Install-NginxComponent {
     } catch { }
 
     # Probar sintaxis (compatible PS 5.1)
-    # Ejecutamos desde el directorio de nginx.exe para que cualquier ruta relativa (incluyendo el default interno "logs/error.log") se resuelva correctamente.
+    # Ejecutamos desde el directorio de nginx.exe para que cualquier ruta relativa se resuelva bien.
+    # Usamos 'cmd /c' wrapper porque nginx escribe "syntax is ok" + "test is successful" a stderr
+    # incluso cuando todo va bien. Sin esto, con $ErrorActionPreference=Stop, PowerShell muestra
+    # mensajes ruidosos tipo "nginx.exe : nginx: the configuration file ... syntax is ok".
     $installDir = Get-Property $paths 'install'
     Push-Location -Path $installDir
     try {
-        $testOutput = & $exe -t -c $targetConf 2>&1
+        # Construimos el comando de forma que maneje rutas con espacios
+        $testOutput = cmd /c ('"' + $exe + '" -t -c "' + $targetConf + '"') 2>&1
+        $exitCode = $LASTEXITCODE
     } finally {
         Pop-Location
     }
-    if ($LASTEXITCODE -ne 0) {
+
+    if ($exitCode -ne 0) {
         Write-Host "[nginx] Error en configuracion:" -ForegroundColor Red
         Write-Host ($testOutput | Out-String) -ForegroundColor Red
         throw "[nginx] La configuracion tiene errores (ver arriba)"
     }
+
+    # Feedback limpio cuando pasa (no mostramos el mensaje interno de nginx para no generar ruido)
+    Write-Host "[nginx] Sintaxis de configuracion: OK" -ForegroundColor Green
+```
+
+The replace was unnecessary, I just wanted to check.
+
+No, I don't need to do another replace. The code is already correct.
+
+To make the quoting a tad more reliable, let's update the cmd line to use a safer construction.
+```
+
+The replace succeeded, but I see the `$cmd` line uses backticks for quoting. In PowerShell that should work, but let's make the quoting safer for paths with spaces.
+
+Also, I should improve the quoting a bit.
+
+In the code I put:
+
+`$cmd = "`"$exe`" -t -c `"$targetConf`""`
+
+Then `cmd /c $cmd`
+
+This can have issues if paths have special chars, but for typical D:\ paths it's usually fine.
+
+A more robust way:
+
+```powershell
+$testOutput = cmd /c "`"$exe`" -t -c `"$targetConf`"" 2>&1
+$exitCode = $LASTEXITCODE
+```
+
+Yes, inline is simpler.
+
+Let me refine the code to be cleaner.
 
     # 4. Servicio (NSSM preferido)
     $svcName = Get-Property (Get-Property $cfg 'service') 'name'
