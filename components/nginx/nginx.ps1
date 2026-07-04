@@ -234,37 +234,6 @@ function Install-NginxComponent {
 
     # Feedback limpio cuando pasa (no mostramos el mensaje interno de nginx para no generar ruido)
     Write-Host "[nginx] Sintaxis de configuracion: OK" -ForegroundColor Green
-```
-
-The replace was unnecessary, I just wanted to check.
-
-No, I don't need to do another replace. The code is already correct.
-
-To make the quoting a tad more reliable, let's update the cmd line to use a safer construction.
-```
-
-The replace succeeded, but I see the `$cmd` line uses backticks for quoting. In PowerShell that should work, but let's make the quoting safer for paths with spaces.
-
-Also, I should improve the quoting a bit.
-
-In the code I put:
-
-`$cmd = "`"$exe`" -t -c `"$targetConf`""`
-
-Then `cmd /c $cmd`
-
-This can have issues if paths have special chars, but for typical D:\ paths it's usually fine.
-
-A more robust way:
-
-```powershell
-$testOutput = cmd /c "`"$exe`" -t -c `"$targetConf`"" 2>&1
-$exitCode = $LASTEXITCODE
-```
-
-Yes, inline is simpler.
-
-Let me refine the code to be cleaner.
 
     # 4. Servicio (NSSM preferido)
     $svcName = Get-Property (Get-Property $cfg 'service') 'name'
