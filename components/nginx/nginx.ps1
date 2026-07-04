@@ -213,14 +213,18 @@ function Install-NginxComponent {
 
     # Probar sintaxis (compatible PS 5.1)
     # Ejecutamos desde el directorio de nginx.exe para que cualquier ruta relativa se resuelva bien.
-    # Usamos 'cmd /c' wrapper porque nginx escribe "syntax is ok" + "test is successful" a stderr
-    # incluso cuando todo va bien. Sin esto, con $ErrorActionPreference=Stop, PowerShell muestra
-    # mensajes ruidosos tipo "nginx.exe : nginx: the configuration file ... syntax is ok".
+    # nginx escribe los mensajes de "syntax is ok" a stderr incluso en éxito.
+    # Usamos un scriptblock con $ErrorActionPreference='SilentlyContinue' local para que
+    # PowerShell (que tiene Stop a nivel global) no convierta esos mensajes en NativeCommandError.
     $installDir = Get-Property $paths 'install'
     Push-Location -Path $installDir
     try {
-        # Construimos el comando de forma que maneje rutas con espacios
-        $testOutput = cmd /c ('"' + $exe + '" -t -c "' + $targetConf + '"') 2>&1
+        # Ejecutar en un scriptblock con EA local para que los mensajes de stderr de nginx
+        # (incluso los de éxito) no generen ErrorRecords visibles.
+        $testOutput = & {
+            $ErrorActionPreference = 'SilentlyContinue'
+            & $exe -t -c $targetConf 2>&1
+        }
         $exitCode = $LASTEXITCODE
     } finally {
         Pop-Location
