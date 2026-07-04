@@ -70,7 +70,9 @@ function Install-NeovimComponent {
 
     $nvimExe = Join-Path $installDir "bin\nvim.exe"
 
-    # 1. Descargar (idempotente)
+    # 1. Descargar a caché SOLO si el zip no existe (evita re-descargas en cada ejecución)
+    #    El zip queda en $drive\downloads\cache para siempre (por versión).
+    #    Si borras la carpeta de destino, se re-extrae desde el zip local (sin red).
     $zipName = if ($ver) { "nvim-win64-$ver.zip" } else { "nvim-win64.zip" }
     $zip = Join-Path $cache $zipName
     if (-not (Test-Path $zip)) {

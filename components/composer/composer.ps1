@@ -58,35 +58,40 @@ function Install-ComposerComponent {
 
     $isZip = $url -like "*.zip"
 
-    if (-not (Test-Path $phar)) {
-        Write-Host "[composer] Downloading..." -ForegroundColor Cyan
+    # 1. Descargar el zip/phar a caché SOLO si no existe en $drive\downloads\cache
+    #    Esto hace que la descarga ocurra UNA sola vez por versión.
+    #    Ejecuciones posteriores de deploy.ps1 no tocan la red para este componente.
+    $downloadFile = if ($isZip) {
+        $filename = if ($ver) { "composer-$ver.phar.zip" } else { "composer.phar.zip" }
+        Join-Path $cache $filename
+    } else {
+        $phar
+    }
 
-        $downloadFile = if ($isZip) {
-            $filename = if ($ver) { "composer-$ver.phar.zip" } else { "composer.phar.zip" }
-            Join-Path $cache $filename
+    if ($isZip -and -not (Test-Path $downloadFile)) {
+        Write-Host "[composer] Downloading..." -ForegroundColor Cyan
+        Invoke-WebRequest -Uri $url -OutFile $downloadFile -UseBasicParsing
+    } elseif (-not $isZip -and -not (Test-Path $phar)) {
+        Write-Host "[composer] Downloading..." -ForegroundColor Cyan
+        Invoke-WebRequest -Uri $url -OutFile $phar -UseBasicParsing
+    }
+
+    # 2. Extraer / instalar solo si el .phar final no existe
+    if (-not (Test-Path $phar) -and $isZip) {
+        Write-Host "[composer] Extracting..." -ForegroundColor Cyan
+        Expand-Archive -Path $downloadFile -DestinationPath $cache -Force
+
+        $foundPhar = Get-ChildItem $cache -Recurse -Filter "*.phar" | Select-Object -First 1
+        if ($foundPhar) {
+            Copy-Item $foundPhar.FullName $phar -Force
         } else {
-            $phar
+            throw "[composer] No se encontró ningún archivo .phar dentro del zip"
         }
 
-        Invoke-WebRequest -Uri $url -OutFile $downloadFile -UseBasicParsing
-
-        if ($isZip) {
-            Write-Host "[composer] Extracting..." -ForegroundColor Cyan
-            Expand-Archive -Path $downloadFile -DestinationPath $cache -Force
-
-            # Buscar el .phar dentro del zip extraído
-            $foundPhar = Get-ChildItem $cache -Recurse -Filter "*.phar" | Select-Object -First 1
-            if ($foundPhar) {
-                Copy-Item $foundPhar.FullName $phar -Force
-            } else {
-                throw "[composer] No se encontró ningún archivo .phar dentro del zip"
-            }
-
-            # Limpieza
-            Remove-Item $downloadFile -Force -ErrorAction SilentlyContinue
-            if ($foundPhar.Directory.FullName -ne $composerDir) {
-                Remove-Item $foundPhar.Directory.FullName -Recurse -Force -ErrorAction SilentlyContinue
-            }
+        # NO borrar $downloadFile (es el zip en caché). Solo limpiar la carpeta extraída temporal si es distinta.
+        $extractDir = $foundPhar.Directory.FullName
+        if ($extractDir -ne $cache -and $extractDir -ne $composerDir) {
+            Remove-Item $extractDir -Recurse -Force -ErrorAction SilentlyContinue
         }
     }
 

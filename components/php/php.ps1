@@ -63,7 +63,8 @@ function Install-PhpComponent {
 
     $exe = Join-Path (Get-Property $paths 'install') "php.exe"
 
-    # 1. Descargar (idempotente)
+    # 1. Descargar a caché SOLO si el zip no existe (evita re-descargas en cada ejecución)
+    #    El zip queda en $drive\downloads\cache para siempre (por versión).
     $zip = Join-Path $cache "php-$ver-x64.zip"
     if (-not (Test-Path $zip)) {
         Write-Host "[php] Downloading..." -ForegroundColor Cyan

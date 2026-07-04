@@ -55,6 +55,7 @@ function Install-NssmComponent {
 
     $zip = Join-Path $cache "nssm-$ver.zip"
     if (-not (Test-Path $zip)) {
+        # Descargar a caché SOLO si no existe (evita re-descargas en cada ejecución)
         Invoke-WebRequest $url -OutFile $zip -UseBasicParsing
     }
 
