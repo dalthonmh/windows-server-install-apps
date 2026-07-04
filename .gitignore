@@ -1,5 +1,6 @@
 # Descargas y logs locales
 downloads/
+trash/
 *.zip
 *.exe
 *.log

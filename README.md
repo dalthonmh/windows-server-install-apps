@@ -54,7 +54,7 @@ cd C:\deploy\install-apps
         port = 80
 
         service = @{
-            name        = "Nginx"
+            name        = "nginx"
             displayName = "Nginx Web Server"
             useNssm     = $true
         }
@@ -88,7 +88,7 @@ Eso es todo. El script es **idempotente**: puedes correrlo muchas veces. Solo ha
        version = "2.4"
        port    = 8080
        paths   = @{ ... }
-       service = @{ name = "Apache"; displayName = "Apache" }
+       service = @{ name = "apache"; displayName = "Apache" }
    }
    ```
 

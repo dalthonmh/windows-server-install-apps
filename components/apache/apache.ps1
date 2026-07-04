@@ -238,11 +238,23 @@ function Test-ApacheComponent {
     $apache = Join-Path "$drive\" $installP
     $httpd = Join-Path $apache "bin\httpd.exe"
 
+    $svcName = Get-Property (Get-Property $cfg 'service') 'name'
     if (Test-Path $httpd) {
-        Write-Host "Apache : installed ($apache)"
+        Write-Host "$svcName : installed ($apache)"
     } else {
-        Write-Host "Apache : NOT INSTALLED"
+        Write-Host "$svcName : NOT INSTALLED"
     }
+}
+
+# Helper para debug: imprime la config del servicio NSSM
+function Show-ApacheNssmConfig {
+    param($svcName = "apache")
+    Write-Host "=== NSSM config for $svcName ===" -ForegroundColor Cyan
+    Write-Host "Application:   $(nssm get $svcName Application 2>$null)"
+    Write-Host "AppDirectory:  $(nssm get $svcName AppDirectory 2>$null)"
+    Write-Host "AppParameters: $(nssm get $svcName AppParameters 2>$null)"
+    Write-Host "AppStdout:     $(nssm get $svcName AppStdout 2>$null)"
+    Write-Host "AppStderr:     $(nssm get $svcName AppStderr 2>$null)"
 }
 
 # Nota: dot-sourced desde deploy.ps1

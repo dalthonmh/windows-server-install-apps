@@ -32,7 +32,7 @@
         port = 80
 
         service = @{
-            name        = "Nginx"
+            name        = "nginx"
             displayName = "Nginx Web Server"
             startup     = "Automatic"
             useNssm     = $true
@@ -62,7 +62,7 @@
         port = 81
 
         service = @{
-            name        = "Apache"
+            name        = "apache"
             displayName = "Apache HTTP Server"
             startup     = "Automatic"
             useNssm     = $true
