@@ -41,7 +41,6 @@ cd C:\deploy\install-apps
     nginx = @{
         enabled = $true
         version = "1.30.3"
-        # url se construye automáticamente si no lo defines
 
         paths = @{
             install = "D:\apps\nginx\1.30.3"
@@ -104,6 +103,7 @@ O abre `http://ip-de-servidor-windows` en el navegador.
 El framework detecta automáticamente cualquier componente habilitado en `config.psd1`.
 
 Componentes recomendados:
+
 - `nssm` para wrappers de servicio (separado de la app).
 - Tu app (nginx, iis, etc.).
 
@@ -133,6 +133,9 @@ Componentes recomendados:
 ## Componentes separados (recomendado)
 
 - `nssm` → instala NSSM y lo agrega al PATH del sistema.
+- `php` → instala PHP 8 thread-safe (x64) y lo agrega al PATH.
+- `composer` → instala Composer automáticamente (sin GUI). Descarga composer.phar + crea wrapper + agrega al PATH.
+- `apache` → instala Apache 2.4 (Apache Lounge) en puerto 81 + integracion basica PHP.
 - `nginx` → instala Nginx y lo registra como servicio (puede usar NSSM).
 
 En `config.psd1` usas `downloads.base` para centralizar la URL de todos los binarios estáticos.

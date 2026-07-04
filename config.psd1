@@ -1,25 +1,26 @@
+# Configuracion
+# Author: DalthonMH (dalthonmh@gmail.com)
+# Ultima actualizacion: 2026-07-04
+# Formato recomendado: config.psd1 (PowerShell Data File)
+
 @{
     server = @{
         name  = "WEB-PROD-01"
         drive = "D:"
     }
 
-    # Base comun para todos los binarios estaticos (nginx, nssm, etc.)
     downloads = @{
         base = "https://dalthonmh.com/bin"
     }
 
-    # NSSM separado (recomendado para usar como service wrapper)
     nssm = @{
         enabled = $true
         version = "2.24"
-        # url se construye como: $downloads.base + "/nssm-$version.zip"
     }
 
     nginx = @{
         enabled = $true
         version = "1.30.3"
-        # url opcional, se construye si no se provee: $downloads.base + "/nginx-$version.zip"
 
         paths = @{
             install = "D:\apps\nginx\1.30.3"
@@ -35,6 +36,45 @@
             displayName = "Nginx Web Server"
             startup     = "Automatic"
             useNssm     = $true
+        }
+    }
+
+    php = @{
+        enabled = $true
+        version = "8.2.31"
+
+        paths = @{
+            install = "D:\apps\php\8.2.31"
+        }
+    }
+
+    apache = @{
+        enabled = $true
+        version = "2.4.68"
+
+        paths = @{
+            install = "D:\apps\apache\2.4.68"
+            config  = "D:\config\apache"
+            data    = "D:\data\apache"
+            logs    = "D:\logs\apache"
+        }
+
+        port = 81
+
+        service = @{
+            name        = "Apache"
+            displayName = "Apache HTTP Server"
+            startup     = "Automatic"
+            useNssm     = $true
+        }
+    }
+
+    composer = @{
+        enabled = $true
+        version = "2.10.2"
+
+        paths = @{
+            install = "D:\apps\composer"
         }
     }
 }
