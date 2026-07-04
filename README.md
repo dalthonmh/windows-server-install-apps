@@ -2,9 +2,11 @@
 
 Instalador simple, declarativo e idempotente para Nginx (y otros servicios) en Windows Server.
 
+![Imagen de ejecucion](/docs/ejecution-sample.png)
+
 ## Ejecutar (4 pasos)
 
-> **Importante**: Funciona en PowerShell 5.1 (el que viene por defecto en Windows Server) y PowerShell 7.
+> **Nota**: Funciona en PowerShell 5.1 (el que viene por defecto en Windows Server) y PowerShell 7.
 
 1. En el servidor Windows (PowerShell como Administrador):
 
@@ -76,8 +78,6 @@ Eso es todo. El script es **idempotente**: puedes correrlo muchas veces. Solo ha
 .\validate.ps1
 ```
 
-O abre `http://ip-de-servidor-windows` en el navegador.
-
 ## Agregar un nuevo servicio (fácil)
 
 1. Agrega el bloque en `config.psd1` (usa `downloads.base` cuando sea posible):
@@ -145,5 +145,3 @@ En `config.psd1` usas `downloads.base` para centralizar la URL de todos los bina
 - Todo es idempotente.
 - NSSM y Nginx se pueden habilitar de forma independiente.
 - Git = fácil rollback.
-
-Listo. Edita `config.psd1` → corre `.\deploy.ps1`.
