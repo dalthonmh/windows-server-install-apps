@@ -22,7 +22,6 @@
             name        = "Nginx"
             displayName = "Nginx Web Server"
             startup     = "Automatic"
-            # useNssm = $true   # Descomenta o pon $false para forzar New-Service en lugar de NSSM
         }
     }
 }

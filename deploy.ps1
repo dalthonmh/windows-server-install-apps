@@ -5,20 +5,20 @@
 #>
 [CmdletBinding()]
 param(
-    [string]$Config = "config.psd1"
+    [string]$ConfigPath = "config.psd1"
 )
 
 $ErrorActionPreference = 'Stop'
 
 # Auto-detecta config si el default no existe (prefiere .psd1)
-if (-not (Test-Path $Config)) {
+if (-not (Test-Path $ConfigPath)) {
     foreach ($c in @('config.psd1', 'config.json')) {
-        if (Test-Path $c) { $Config = $c; break }
+        if (Test-Path $c) { $ConfigPath = $c; break }
     }
 }
 
-if (-not (Test-Path $Config)) {
-    throw "No existe el archivo de configuración: $Config (buscando config.psd1 o config.json)"
+if (-not (Test-Path $ConfigPath)) {
+    throw "No existe el archivo de configuración: $ConfigPath (buscando config.psd1 o config.json)"
 }
 
 function Get-TopLevelKeys($obj) {
@@ -118,7 +118,7 @@ function Log($msg, $color = "White") {
 
 # === Carga de configuración (.psd1 nativo para PS 5.1) ===
 try {
-    $config = Read-Config $Config
+    $config = Read-Config $ConfigPath
 } catch {
     Log "ERROR leyendo config: $_" "Red"
     throw
@@ -127,7 +127,7 @@ try {
 Log "Tipo de objeto config: $($config.GetType().FullName)" "Yellow"
 
 $allKeys = Get-TopLevelKeys $config
-Log "Claves en config.json: $($allKeys -join ', ')" "DarkGray"
+Log "Claves en $ConfigPath: $($allKeys -join ', ')" "DarkGray"
 
 $server = Get-Property $config 'server'
 if (-not $server) { $server = @{} }
@@ -163,7 +163,7 @@ foreach ($key in $searchKeys) {
 }
 
 if ($components.Count -eq 0) {
-    Log "No hay componentes habilitados en $Config" "Yellow"
+    Log "No hay componentes habilitados en $ConfigPath" "Yellow"
     Log "Revisa que tenga 'enabled': true (o `$true en .psd1)" "Yellow"
     Log 'Ejemplo (psd1):  nginx = @{ enabled = $true; ... }' "DarkGray"
     exit
