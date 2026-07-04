@@ -22,6 +22,17 @@ function Get-Property($obj, [string]$name) {
 function Install-NginxComponent {
     param($cfg, $serverCfg)
 
+    function Remove-Utf8Bom([string]$text) {
+        if ([string]::IsNullOrEmpty($text)) { return $text }
+        # Quitar BOM UTF-8 si está presente (causa "unknown directive ï»¿#" en nginx)
+        if ($text.Length -gt 0 -and $text[0] -eq [char]0xFEFF) {
+            return $text.Substring(1)
+        }
+        # Por si viene como caracteres literales ï»¿ (cuando se lee mal)
+        if ($text.StartsWith("ï»¿")) { return $text.Substring(3) }
+        return $text
+    }
+
     $drv = $serverCfg
     $drive = if ($drv -and (Get-Property $drv 'drive')) { Get-Property $drv 'drive' } 
              elseif ($drv -and (Get-Property $drv 'appDrive')) { Get-Property $drv 'appDrive' } 
@@ -99,7 +110,9 @@ function Install-NginxComponent {
     $tpl = Join-Path $PSScriptRoot "nginx.conf"
     $targetConf = Join-Path (Get-Property $paths 'config') "nginx.conf"
 
-    $content = Get-Content $tpl -Raw
+    $content = Get-Content $tpl -Raw -Encoding UTF8
+    $content = Remove-Utf8Bom $content
+
     $logPRaw = Get-Property $paths 'logs'
     $dataPRaw = Get-Property $paths 'data'
     $portV = Get-Property $cfg 'port'
@@ -119,15 +132,23 @@ function Install-NginxComponent {
     $content = $content -replace '([A-Za-z]):\\', '$1:/'
     $content = $content -replace '\\+', '/'
 
+    # Limpiar cualquier BOM residual antes de escribir/comparar
+    $content = Remove-Utf8Bom $content
+    $content = $content.TrimStart([char]0xFEFF)
+
     $needsUpdate = $true
     if (Test-Path $targetConf) {
-        $current = Get-Content $targetConf -Raw
+        $current = Get-Content $targetConf -Raw -Encoding UTF8
+        $current = Remove-Utf8Bom $current
+        $current = $current.TrimStart([char]0xFEFF)
         if ($current -eq $content) { $needsUpdate = $false }
     }
 
     if ($needsUpdate) {
         Copy-Item $targetConf "$targetConf.bak" -ErrorAction SilentlyContinue -Force
-        Set-Content -Path $targetConf -Value $content -Encoding UTF8
+        # Escribir SIN BOM (Set-Content -Encoding UTF8 agrega BOM en PS 5.1 y nginx lo odia)
+        $utf8NoBom = New-Object System.Text.UTF8Encoding $false
+        [System.IO.File]::WriteAllText($targetConf, $content, $utf8NoBom)
         Write-Host "[nginx] Configuracion actualizada." -ForegroundColor Green
     }
 
