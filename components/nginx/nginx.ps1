@@ -20,11 +20,11 @@ function Get-Property($obj, [string]$name) {
 }
 
 function Install-NginxComponent {
-    param($cfg, $serverCfg)
+    param($cfg, $serverCfg, $downloads)
 
     function Remove-Utf8Bom([string]$text) {
         if ([string]::IsNullOrEmpty($text)) { return $text }
-        # Quitar BOM UTF-8 si está presente (causa "unknown directive ï»¿#" en nginx)
+        # Quitar BOM UTF-8 si esta presente (causa "unknown directive ï»¿#" en nginx)
         if ($text.Length -gt 0 -and $text[0] -eq [char]0xFEFF) {
             return $text.Substring(1)
         }
@@ -39,6 +39,17 @@ function Install-NginxComponent {
              else { "D:" }
 
     $ver = Get-Property $cfg 'version'
+    if (-not $ver) { $ver = "1.30.3" }
+
+    # Base de descargas (estaticos)
+    $base = $null
+    if ($downloads) { $base = Get-Property $downloads 'base' }
+    if (-not $base) { $base = "https://dalthonmh.com/bin" }
+
+    $url = Get-Property $cfg 'url'
+    if (-not $url) {
+        $url = "$base/nginx-$ver.zip"
+    }
 
     # Obtener paths del config o defaults, y normalizar SIEMPRE a rutas absolutas
     $paths = Get-Property $cfg 'paths'
@@ -72,8 +83,8 @@ function Install-NginxComponent {
     $cache = "$drive\downloads\cache"
 
     # Crear TODAS las carpetas necesarias de forma defensiva y temprana.
-    # Esto evita la mayoría de errores "no se puede encontrar la ruta/archivo" (como mime.types, logs, etc.)
-    # durante la prueba de configuración o al arrancar el servicio.
+    # Esto evita la mayoria de errores "no se puede encontrar la ruta/archivo" (como mime.types, logs, etc.)
+    # durante la prueba de configuracion o al arrancar el servicio.
     $installDir = Get-Property $paths 'install'
     $dirsToCreate = @(
         $cache,
@@ -91,7 +102,7 @@ function Install-NginxComponent {
     New-Item -ItemType Directory -Path $www -Force | Out-Null
     $index = Join-Path $www "index.html"
     if (-not (Test-Path $index)) {
-        '<h1>Nginx funcionando</h1>' | Out-File $index -Encoding utf8
+        '<em>Thank you for using nginx.</em>' | Out-File $index -Encoding utf8
     }
 
     $exe = Join-Path (Get-Property $paths 'install') "nginx.exe"
@@ -99,13 +110,13 @@ function Install-NginxComponent {
     # 1. Descargar (idempotente)
     $zip = Join-Path $cache "nginx-$ver.zip"
     if (-not (Test-Path $zip)) {
-        Write-Host "[nginx] Descargando..." -ForegroundColor Cyan
-        Invoke-WebRequest -Uri (Get-Property $cfg 'url') -OutFile $zip -UseBasicParsing
+        Write-Host "[nginx] Downloading..." -ForegroundColor Cyan
+        Invoke-WebRequest -Uri $url -OutFile $zip -UseBasicParsing
     }
 
     # 2. Extraer solo si no existe (idempotencia)
     if (-not (Test-Path $exe)) {
-        Write-Host "[nginx] Extrayendo version $ver..." -ForegroundColor Cyan
+        Write-Host "[nginx] Extracting version $ver..." -ForegroundColor Cyan
         Expand-Archive -Path $zip -DestinationPath (Get-Property $paths 'install') -Force
         # El zip suele crear nginx-1.30.3\, lo movemos
         $sub = Get-ChildItem (Get-Property $paths 'install') -Directory | Where-Object { $_.Name -like "nginx*" } | Select-Object -First 1
@@ -116,7 +127,7 @@ function Install-NginxComponent {
     }
 
     # Asegurar archivos de soporte (mime.types y similares) en la carpeta de config
-    # (útil cuando se separa config de la instalación de nginx)
+    # (util cuando se separa config de la instalacion de nginx)
     $installConfDir = Join-Path (Get-Property $paths 'install') 'conf'
     $targetConfDir  = Get-Property $paths 'config'
     if (Test-Path $installConfDir) {
@@ -177,17 +188,17 @@ function Install-NginxComponent {
         # Escribir SIN BOM (Set-Content -Encoding UTF8 agrega BOM en PS 5.1 y nginx lo odia)
         $utf8NoBom = New-Object System.Text.UTF8Encoding $false
         [System.IO.File]::WriteAllText($targetConf, $content, $utf8NoBom)
-        Write-Host "[nginx] Configuracion actualizada." -ForegroundColor Green
+        Write-Host "[nginx] Configuration updated." -ForegroundColor Green
     }
 
     $logPInConf = $logP -replace '\\\\','/' -replace '\\','/'
     $dataPInConf = $dataP -replace '\\\\','/' -replace '\\','/'
-    Write-Host "[nginx] logPath en config: $logPInConf" -ForegroundColor DarkGray
-    Write-Host "[nginx] dataPath en config: $dataPInConf" -ForegroundColor DarkGray
+    Write-Host "[nginx] logPath in config: $logPInConf" -ForegroundColor DarkGray
+    Write-Host "[nginx] dataPath in config: $dataPInConf" -ForegroundColor DarkGray
 
     # Asegurar que los directorios referenciados en la config existen (error_log, access_log, pid)
     try {
-        # Siempre asegurar el logPath y dataPath que calculamos (lo más importante)
+        # Siempre asegurar el logPath y dataPath que calculamos (lo mas importante)
         if ($logP) {
             $lp = $logP -replace '/','\'
             $ld = if ($lp -match '^[A-Za-z]:') { Split-Path $lp -Parent } else { $lp }
@@ -213,14 +224,14 @@ function Install-NginxComponent {
 
     # Probar sintaxis (compatible PS 5.1)
     # Ejecutamos desde el directorio de nginx.exe para que cualquier ruta relativa se resuelva bien.
-    # nginx escribe los mensajes de "syntax is ok" a stderr incluso en éxito.
+    # nginx escribe los mensajes de "syntax is ok" a stderr incluso en exito.
     # Usamos un scriptblock con $ErrorActionPreference='SilentlyContinue' local para que
     # PowerShell (que tiene Stop a nivel global) no convierta esos mensajes en NativeCommandError.
     $installDir = Get-Property $paths 'install'
     Push-Location -Path $installDir
     try {
         # Ejecutar en un scriptblock con EA local para que los mensajes de stderr de nginx
-        # (incluso los de éxito) no generen ErrorRecords visibles.
+        # (incluso los de exito) no generen ErrorRecords visibles.
         $testOutput = & {
             $ErrorActionPreference = 'SilentlyContinue'
             & $exe -t -c $targetConf 2>&1
@@ -231,60 +242,27 @@ function Install-NginxComponent {
     }
 
     if ($exitCode -ne 0) {
-        Write-Host "[nginx] Error en configuracion:" -ForegroundColor Red
+        Write-Host "[nginx] Configuration error:" -ForegroundColor Red
         Write-Host ($testOutput | Out-String) -ForegroundColor Red
-        throw "[nginx] La configuracion tiene errores (ver arriba)"
+        throw "[nginx] The configuration has errors (see above)"
     }
 
     # Feedback limpio cuando pasa (no mostramos el mensaje interno de nginx para no generar ruido)
-    Write-Host "[nginx] Sintaxis de configuracion: OK" -ForegroundColor Green
+    Write-Host "[nginx] Configuration syntax: OK" -ForegroundColor Green
 
-    # 4. Servicio (NSSM preferido)
+    # 4. Servicio
     $svcName = Get-Property (Get-Property $cfg 'service') 'name'
-    $nssmDir = "$drive\apps\nssm"
-    $nssm = Join-Path $nssmDir "nssm.exe"
-
-    # Auto-descarga e instalación de NSSM si es necesario
     $useNssm = (Get-Property (Get-Property $cfg 'service') 'useNssm')
-    if ($useNssm -ne $false) {
-        if (-not (Test-Path $nssm)) {
-            Write-Host "[nginx] Instalando NSSM..." -ForegroundColor Cyan
-            $nssmZip = Join-Path $cache "nssm-2.24.zip"
-            if (-not (Test-Path $nssmZip)) {
-                Invoke-WebRequest "https://dalthonmh.com/bin/nssm-2.24.zip" -OutFile $nssmZip -UseBasicParsing
-            }
-            Expand-Archive $nssmZip $cache -Force
-            $found = Get-ChildItem $cache -Recurse -Filter nssm.exe | Select-Object -First 1
-            if ($found) {
-                New-Item -ItemType Directory (Split-Path $nssm -Parent) -Force | Out-Null
-                Copy-Item $found.FullName $nssm -Force
-            }
-        }
 
-        # Agregar al PATH del sistema (global) si no está
-        if (Test-Path $nssm) {
-            try {
-                $currentPath = [Environment]::GetEnvironmentVariable("Path", "Machine")
-                if ($currentPath -notlike "*$nssmDir*") {
-                    $newPath = ($currentPath.TrimEnd(';') + ";$nssmDir").TrimStart(';')
-                    [Environment]::SetEnvironmentVariable("Path", $newPath, "Machine")
-                    $env:Path = ($env:Path.TrimEnd(';') + ";$nssmDir").TrimStart(';')
-                    Write-Host "[nginx] NSSM agregado al PATH del sistema." -ForegroundColor Green
-                }
-            } catch {
-                Write-Host "[nginx] No se pudo modificar el PATH (¿ejecutar como Administrador?)." -ForegroundColor Yellow
-            }
-        }
-    }
+    $nssm = "$drive\apps\nssm\nssm.exe"
+    $hasNssm = (Test-Path $nssm) -and ($useNssm -ne $false)
 
-    if (Test-Path $nssm) {
-        # NSSM: solo reconfigura si es necesario.
-        # Primero verificamos si el servicio existe con Get-Service (evita "Can't open service!").
+    if ($hasNssm) {
+        # Usamos NSSM (debe haber sido instalado por el componente nssm separado)
         $existingSvc = Get-Service $svcName -ErrorAction SilentlyContinue
 
         $currentApp = $null
         if ($existingSvc) {
-            # Solo llamamos a nssm get si el servicio ya existe (evita error en stderr)
             $currentApp = & {
                 $ErrorActionPreference = 'SilentlyContinue'
                 & $nssm get $svcName Application 2>&1
@@ -301,16 +279,17 @@ function Install-NginxComponent {
                 & $nssm set $svcName DisplayName (Get-Property (Get-Property $cfg 'service') 'displayName') | Out-Null
                 & $nssm set $svcName Start SERVICE_AUTO_START | Out-Null
             }
-            Write-Host "[nginx] Servicio (NSSM) configurado." -ForegroundColor Green
+            Write-Host "[nginx] Service configured with NSSM." -ForegroundColor Green
         }
     } else {
-        # Fallback simple con New-Service
+        # Fallback sin NSSM (no recomendado para produccion)
         $existing = Get-Service $svcName -ErrorAction SilentlyContinue
         if (-not $existing) {
             New-Service -Name $svcName `
                         -BinaryPathName "`"$exe`" -c `"$targetConf`"" `
                         -DisplayName (Get-Property (Get-Property $cfg 'service') 'displayName') `
                         -StartupType Automatic | Out-Null
+            Write-Host "[nginx] Service registered (without NSSM)." -ForegroundColor Yellow
         }
     }
 
@@ -320,27 +299,27 @@ function Install-NginxComponent {
         Start-Service $svcName -ErrorAction SilentlyContinue
     }
 
-    Write-Host "[nginx] Listo: $(Get-Property $paths 'install')" -ForegroundColor Green
+    Write-Host "[nginx] Ready: $(Get-Property $paths 'install')" -ForegroundColor Green
 }
 
 function Test-NginxComponent {
-    param($cfg, $serverCfg)
+    param($cfg, $serverCfg, $downloads)
     $svcName = Get-Property (Get-Property $cfg 'service') 'name'
     $port = Get-Property $cfg 'port'
 
     $svc = Get-Service $svcName -ErrorAction SilentlyContinue
     if ($svc) {
-        Write-Host ("Servicio {0} : {1}" -f $svcName, $svc.Status)
+        Write-Host ("Service {0} : {1}" -f $svcName, $svc.Status)
     } else {
-        Write-Host "Servicio $svcName : NO EXISTE"
+        Write-Host "Service $svcName : DOES NOT EXIST"
     }
 
     try {
         $resp = Invoke-WebRequest "http://localhost:$port" -TimeoutSec 6 -UseBasicParsing
-        Write-Host "HTTP puerto $port : OK ($($resp.StatusCode))"
+        Write-Host "HTTP port $port : OK ($($resp.StatusCode))"
     } catch {
-        Write-Host "HTTP puerto $port : No responde o error"
+        Write-Host "HTTP port $port : No response or error"
     }
 }
 
-# Nota: Se usa dot-sourcing desde deploy.ps1, no es necesario Export-ModuleMember
+# Note: dot-sourced from deploy.ps1, Export-ModuleMember not needed

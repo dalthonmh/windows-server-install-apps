@@ -10,15 +10,8 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
-# Auto-detecta config si el default no existe (prefiere .psd1)
 if (-not (Test-Path $ConfigPath)) {
-    foreach ($c in @('config.psd1', 'config.json')) {
-        if (Test-Path $c) { $ConfigPath = $c; break }
-    }
-}
-
-if (-not (Test-Path $ConfigPath)) {
-    throw "No existe el archivo de configuración: $ConfigPath (buscando config.psd1 o config.json)"
+    throw "Configuration file not found: $ConfigPath (expected config.psd1)"
 }
 
 function Get-TopLevelKeys($obj) {
@@ -56,7 +49,7 @@ function Test-IsEnabled($value) {
 
 function Read-Config([string]$path) {
     if (-not (Test-Path $path)) {
-        throw "No existe el archivo: $path"
+        throw "File does not exist: $path"
     }
 
     $ext = [System.IO.Path]::GetExtension($path).ToLower()
@@ -70,23 +63,10 @@ function Read-Config([string]$path) {
         }
     }
     else {
-        # Soporte legacy para .json (más frágil en PS 5.1)
-        $fullPath = (Resolve-Path $path).ProviderPath
-        $bytes = [System.IO.File]::ReadAllBytes($fullPath)
-        if ($bytes.Length -ge 3 -and $bytes[0] -eq 0xEF -and $bytes[1] -eq 0xBB -and $bytes[2] -eq 0xBF) {
-            $bytes = $bytes[3..($bytes.Length - 1)]
-        }
-        $jsonText = [System.Text.Encoding]::UTF8.GetString($bytes).Trim()
-
-        if ([string]::IsNullOrWhiteSpace($jsonText) -or -not ($jsonText.StartsWith('{') -and $jsonText.EndsWith('}'))) {
-            throw "El archivo no parece un objeto JSON válido: $path"
-        }
-
-        # Evitamos el problema anterior de pasar array/string enumerable
-        $res = ConvertFrom-Json -InputObject $jsonText
+        throw "Only .psd1 format is supported (config.psd1). JSON support was removed."
     }
 
-    # Normalizar: si por alguna razón se obtuvo una cadena, intentar reinterpretarla
+    # Normalizar: si por alguna razon se obtuvo una cadena, intentar reinterpretarla
     if ($res -is [string]) {
         $trim = $res.Trim()
         if ($trim.StartsWith('{') -and $trim.EndsWith('}')) {
@@ -116,18 +96,18 @@ function Log($msg, $color = "White") {
     Write-Host "[$ts] $msg" -ForegroundColor $color
 }
 
-# === Carga de configuración (.psd1 nativo para PS 5.1) ===
+# === Carga de configuracion (.psd1 nativo para PS 5.1) ===
 try {
     $config = Read-Config $ConfigPath
 } catch {
-    Log "ERROR leyendo config: $_" "Red"
+    Log "ERROR reading config: $_" "Red"
     throw
 }
 
-Log "Tipo de objeto config: $($config.GetType().FullName)" "Yellow"
+Log "Config object type: $($config.GetType().FullName)" "Yellow"
 
 $allKeys = Get-TopLevelKeys $config
-Log "Claves en ${ConfigPath}: $($allKeys -join ', ')" "DarkGray"
+Log "Keys in ${ConfigPath}: $($allKeys -join ', ')" "DarkGray"
 
 $server = Get-Property $config 'server'
 if (-not $server) { $server = @{} }
@@ -139,15 +119,15 @@ if (-not $driveVal) { $driveVal = "D:" }
 $serverName = Get-Property $server 'name'
 if (-not $serverName) { $serverName = "(sin nombre)" }
 
-Write-Host "=== Desplegando en $serverName ===" -ForegroundColor Cyan
-Log "Server detectado: name='$serverName' drive='$driveVal'" "DarkGray"
+Write-Host "=== Deploying on $serverName ===" -ForegroundColor Cyan
+Log "Server detected: name='$serverName' drive='$driveVal'" "DarkGray"
 
 # Buscar componentes
 $searchSpace = $config
 $compSection = Get-Property $config 'components'
 if ($compSection) {
     $searchSpace = $compSection
-    Log "Usando estructura con 'components'" "DarkGray"
+    Log "Using 'components' structure" "DarkGray"
 }
 
 $searchKeys = Get-TopLevelKeys $searchSpace
@@ -163,13 +143,13 @@ foreach ($key in $searchKeys) {
 }
 
 if ($components.Count -eq 0) {
-    Log "No hay componentes habilitados en $ConfigPath" "Yellow"
-    Log "Revisa que tenga 'enabled': true (o `$true en .psd1)" "Yellow"
-    Log 'Ejemplo (psd1):  nginx = @{ enabled = $true; ... }' "DarkGray"
+    Log "No enabled components found in $ConfigPath" "Yellow"
+    Log "Make sure components have 'enabled': true (or `$true in .psd1)" "Yellow"
+    Log 'Example (psd1):  nginx = @{ enabled = $true; ... }' "DarkGray"
     exit
 }
 
-Log "Componentes a instalar: $($components -join ', ')" "Cyan"
+Log "Components to install: $($components -join ', ')" "Cyan"
 
 foreach ($name in $components) {
     $compCfg = Get-Property $searchSpace $name
@@ -177,22 +157,24 @@ foreach ($name in $components) {
     $compScript = Join-Path $compDir "$name.ps1"
 
     if (-not (Test-Path $compScript)) {
-        Log "No existe logica para '$name' → $compScript" "Red"
+        Log "No logic found for '$name' → $compScript" "Red"
         continue
     }
 
-    Log "Procesando componente: $name" "Cyan"
+    Log "Processing component: $name" "Cyan"
 
     . $compScript
 
     $funcName = "Install-" + $name.Substring(0,1).ToUpper() + $name.Substring(1) + "Component"
 
+    $downloads = Get-Property $config 'downloads'
+
     if (Get-Command $funcName -ErrorAction SilentlyContinue) {
-        & $funcName -cfg $compCfg -serverCfg $server
+        & $funcName -cfg $compCfg -serverCfg $server -downloads $downloads
     } else {
-        Log "No se encontro la funcion $funcName" "Yellow"
+        Log "Function not found: $funcName" "Yellow"
     }
 }
 
-Log "Despliegue terminado." "Green"
-Log "Ejecuta .\validate.ps1 para verificar." "Yellow"
+Log "Deployment finished." "Green"
+Log "Run .\validate.ps1 to verify." "Yellow"

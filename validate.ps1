@@ -4,11 +4,8 @@
 #>
 param([string]$Config = "config.psd1")
 
-# Auto-detecta config si es necesario
 if (-not (Test-Path $Config)) {
-    foreach ($c in @('config.psd1', 'config.json')) {
-        if (Test-Path $c) { $Config = $c; break }
-    }
+    throw "Configuration file not found: $Config (expected config.psd1)"
 }
 
 function Get-TopLevelKeys($obj) {
@@ -59,19 +56,7 @@ function Read-Config([string]$path) {
         }
     }
     else {
-        # Soporte para JSON legacy
-        $fullPath = (Resolve-Path $path).ProviderPath
-        $bytes = [System.IO.File]::ReadAllBytes($fullPath)
-        if ($bytes.Length -ge 3 -and $bytes[0] -eq 0xEF -and $bytes[1] -eq 0xBB -and $bytes[2] -eq 0xBF) {
-            $bytes = $bytes[3..($bytes.Length - 1)]
-        }
-        $jsonText = [System.Text.Encoding]::UTF8.GetString($bytes).Trim()
-
-        if ([string]::IsNullOrWhiteSpace($jsonText) -or -not ($jsonText.StartsWith('{') -and $jsonText.EndsWith('}'))) {
-            throw "El archivo no parece un objeto JSON válido: $path"
-        }
-
-        return (ConvertFrom-Json -InputObject $jsonText)
+        throw "Only config.psd1 is supported. JSON support was removed."
     }
 }
 
@@ -79,11 +64,11 @@ $rawConfig = $null
 try {
     $rawConfig = Read-Config $Config
 } catch {
-    Write-Host "ERROR cargando config: $_" -ForegroundColor Red
+    Write-Host "ERROR loading config: $_" -ForegroundColor Red
     exit 1
 }
 
-Write-Host "=== Validacion ===" -ForegroundColor Cyan
+Write-Host "=== Validation ===" -ForegroundColor Cyan
 
 $searchSpace = $rawConfig
 $compSection = Get-Property $rawConfig 'components'
@@ -106,7 +91,8 @@ foreach ($key in $searchKeys) {
         . $compScript
         $testFunc = "Test-" + $name.Substring(0,1).ToUpper() + $name.Substring(1) + "Component"
         if (Get-Command $testFunc -ErrorAction SilentlyContinue) {
-            & $testFunc -cfg $comp -serverCfg (Get-Property $rawConfig 'server')
+            $dl = Get-Property $rawConfig 'downloads'
+            & $testFunc -cfg $comp -serverCfg (Get-Property $rawConfig 'server') -downloads $dl
         }
     }
 
@@ -117,9 +103,9 @@ foreach ($key in $searchKeys) {
         if ($s) {
             Write-Host "$svcName : $($s.Status)"
         } else {
-            Write-Host "$svcName : NO EXISTE"
+            Write-Host "$svcName : DOES NOT EXIST"
         }
     }
 }
 
-Write-Host "Validacion finalizada."
+Write-Host "Validation finished."

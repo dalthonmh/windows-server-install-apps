@@ -19,7 +19,7 @@ git clone https://github.com/dalthonmh/windows-server-install-apps.git C:\deploy
 cd C:\deploy\install-apps
 ```
 
-3. Edita `config.psd1` (solo este archivo) — usa hashtable de PowerShell (formato nativo y más confiable en PS 5.1):
+3. Edita `config.psd1` (solo este archivo):
 
 ```powershell
 @{
@@ -28,10 +28,20 @@ cd C:\deploy\install-apps
         drive = "D:"
     }
 
+    # URL base para todos los binarios (nginx, nssm, etc.)
+    downloads = @{
+        base = "https://dalthonmh.com/bin"
+    }
+
+    nssm = @{
+        enabled = $true
+        version = "2.24"
+    }
+
     nginx = @{
         enabled = $true
         version = "1.30.3"
-        url     = "https://dalthonmh.com/bin/nginx-1.30.3.zip"
+        # url se construye automáticamente si no lo defines
 
         paths = @{
             install = "D:\apps\nginx\1.30.3"
@@ -45,16 +55,13 @@ cd C:\deploy\install-apps
         service = @{
             name        = "Nginx"
             displayName = "Nginx Web Server"
+            useNssm     = $true
         }
     }
 }
 ```
 
-Importante: usa `$true` (no `true`), y las rutas con `\` normal (no `\\`). 
-
-El script soporta **ambos formatos**:
-- `config.psd1` (recomendado — nativo y más confiable en Windows PowerShell 5.1)
-- `config.json` (legacy)
+Importante: usa `$true` y rutas con `\`. Solo se soporta `config.psd1`.
 
 4. Ejecuta:
 
@@ -74,13 +81,12 @@ O abre `http://ip-de-servidor-windows` en el navegador.
 
 ## Agregar un nuevo servicio (fácil)
 
-1. Agrega el bloque en `config.psd1`:
+1. Agrega el bloque en `config.psd1` (usa `downloads.base` cuando sea posible):
 
    ```powershell
    apache = @{
        enabled = $true
-       version = "..."
-       url     = "https://..."
+       version = "2.4"
        port    = 8080
        paths   = @{ ... }
        service = @{ name = "Apache"; displayName = "Apache" }
@@ -89,44 +95,52 @@ O abre `http://ip-de-servidor-windows` en el navegador.
 
 2. Crea carpeta `components/apache/`
 
-3. Copia los dos archivos de `components/nginx/` y renómbralos:
-   - `apache.conf` (edita la plantilla)
-   - `apache.ps1` (edita la lógica)
+3. Copia la estructura de un componente existente (ej. `nginx` o `nssm`).
 
-4. En `apache.ps1` cambia el nombre de las funciones:
+4. Implementa:
    - `Install-ApacheComponent`
    - `Test-ApacheComponent`
 
-¡Listo! `deploy.ps1` lo detecta automáticamente.
+El framework detecta automáticamente cualquier componente habilitado en `config.psd1`.
 
-## Estructura (mínima)
+Componentes recomendados:
+- `nssm` para wrappers de servicio (separado de la app).
+- Tu app (nginx, iis, etc.).
+
+## Estructura (modular)
 
 ```
 .
 ├── README.md
-├── config.psd1          # ← Recomendado (nativo PS 5.1)
-├── config.json          # ← Soporte legacy
-├── deploy.ps1           # ← Ejecuta esto
+├── config.psd1
+├── deploy.ps1
 ├── validate.ps1
-├── .gitignore
 └── components/
+    ├── nssm/
+    │   └── nssm.ps1          # Lógica de NSSM + PATH global
     └── nginx/
-        ├── nginx.conf   # Plantilla
-        └── nginx.ps1    # Lógica del componente
+        ├── nginx.conf        # Plantilla de configuración
+        └── nginx.ps1         # Lógica de Nginx
 ```
 
 ## Paths en el servidor (separación clara)
 
 - App: `D:\apps\nginx\1.30.3`
-- Config:`D:\config\nginx`
+- Config: `D:\config\nginx`
 - Data: `D:\data\nginx`
 - Logs: `D:\logs\nginx`
 
+## Componentes separados (recomendado)
+
+- `nssm` → instala NSSM y lo agrega al PATH del sistema.
+- `nginx` → instala Nginx y lo registra como servicio (puede usar NSSM).
+
+En `config.psd1` usas `downloads.base` para centralizar la URL de todos los binarios estáticos.
+
 ## Notas importantes
 
-- Usa tu propio dominio para los zips (`https://dalthonmh.com/bin/...`)
-- NSSM se descarga automáticamente si lo necesitas (o ponlo manualmente)
-- Todo queda registrado en `D:\logs\deployment\`
-- Git = historial y rollback fácil
+- Todo es idempotente.
+- NSSM y Nginx se pueden habilitar de forma independiente.
+- Git = fácil rollback.
 
-Listo. Edita `config.psd1` (o `config.json`) → corre `deploy.ps1`.
+Listo. Edita `config.psd1` → corre `.\deploy.ps1`.
