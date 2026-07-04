@@ -70,12 +70,21 @@ function Install-NginxComponent {
     }
 
     $cache = "$drive\downloads\cache"
-    New-Item -ItemType Directory -Path $cache, (Get-Property $paths 'install'), (Get-Property $paths 'config'), (Get-Property $paths 'data'), (Get-Property $paths 'logs') -Force | Out-Null
 
-    # Garantizar que exista "logs/" al lado de nginx.exe (muchos errores de "logs/error.log" vienen de esto)
+    # Crear TODAS las carpetas necesarias de forma defensiva y temprana.
+    # Esto evita la mayoría de errores "no se puede encontrar la ruta/archivo" (como mime.types, logs, etc.)
+    # durante la prueba de configuración o al arrancar el servicio.
     $installDir = Get-Property $paths 'install'
-    $localLogs = Join-Path $installDir 'logs'
-    New-Item -ItemType Directory -Path $localLogs -Force | Out-Null
+    $dirsToCreate = @(
+        $cache,
+        $installDir,
+        (Get-Property $paths 'config'),
+        (Join-Path $installDir 'conf'),
+        (Join-Path $installDir 'logs'),
+        (Get-Property $paths 'data'),
+        (Get-Property $paths 'logs')
+    )
+    New-Item -ItemType Directory -Path $dirsToCreate -Force | Out-Null
 
     # Crear carpeta www + index basico si no existe (separacion de datos)
     $www = Join-Path (Get-Property $paths 'data') "www"
@@ -106,6 +115,20 @@ function Install-NginxComponent {
         }
     }
 
+    # Asegurar archivos de soporte (mime.types y similares) en la carpeta de config
+    # (útil cuando se separa config de la instalación de nginx)
+    $installConfDir = Join-Path (Get-Property $paths 'install') 'conf'
+    $targetConfDir  = Get-Property $paths 'config'
+    if (Test-Path $installConfDir) {
+        $supportFiles = @('mime.types', 'fastcgi_params', 'uwsgi_params', 'scgi_params')
+        foreach ($f in $supportFiles) {
+            $src = Join-Path $installConfDir $f
+            if (Test-Path $src) {
+                Copy-Item $src (Join-Path $targetConfDir $f) -Force -ErrorAction SilentlyContinue
+            }
+        }
+    }
+
     # 3. Desplegar configuracion (solo si cambio)
     $tpl = Join-Path $PSScriptRoot "nginx.conf"
     $targetConf = Join-Path (Get-Property $paths 'config') "nginx.conf"
@@ -113,20 +136,25 @@ function Install-NginxComponent {
     $content = Get-Content $tpl -Raw -Encoding UTF8
     $content = Remove-Utf8Bom $content
 
-    $logPRaw = Get-Property $paths 'logs'
-    $dataPRaw = Get-Property $paths 'data'
-    $portV = Get-Property $cfg 'port'
+    $logPRaw     = Get-Property $paths 'logs'
+    $dataPRaw    = Get-Property $paths 'data'
+    $installPRaw = Get-Property $paths 'install'
+    $portV       = Get-Property $cfg 'port'
 
     # Usar rutas absolutas (ya normalizadas arriba). Forzar backslashes para claridad
-    $logP  = if ($logPRaw)  { ([string]$logPRaw).TrimEnd('\','/').Replace('/','\') } else { 'logs' }
-    $dataP = if ($dataPRaw) { ([string]$dataPRaw).TrimEnd('\','/').Replace('/','\') } else { 'data' }
+    $logP     = if ($logPRaw)     { ([string]$logPRaw).TrimEnd('\','/').Replace('/','\') } else { 'logs' }
+    $dataP    = if ($dataPRaw)    { ([string]$dataPRaw).TrimEnd('\','/').Replace('/','\') } else { 'data' }
+    $installP = if ($installPRaw) { ([string]$installPRaw).TrimEnd('\','/').Replace('/','\') } else { '' }
 
     # Asegurar que existan las carpetas necesarias (config + logs custom)
     try { New-Item -ItemType Directory -Path $logPRaw -Force | Out-Null } catch { }
     try { New-Item -ItemType Directory -Path (Split-Path $targetConf -Parent) -Force | Out-Null } catch { }
 
     # Reemplazos con String.Replace usando rutas Windows (backslashes)
-    $content = $content.Replace('{{logPath}}', $logP).Replace('{{dataPath}}', $dataP).Replace('{{port}}', [string]$portV)
+    $content = $content.Replace('{{logPath}}', $logP)
+    $content = $content.Replace('{{dataPath}}', $dataP)
+    $content = $content.Replace('{{installPath}}', $installP)
+    $content = $content.Replace('{{port}}', [string]$portV)
 
     # Normalizar todas las rutas generadas a usar / (estilo recomendado para nginx, funciona perfecto en Windows)
     $content = $content -replace '([A-Za-z]):\\', '$1:/'
