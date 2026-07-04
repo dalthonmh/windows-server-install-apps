@@ -117,11 +117,25 @@ function Install-NginxComponent {
     # 2. Extraer solo si no existe (idempotencia)
     if (-not (Test-Path $exe)) {
         Write-Host "[nginx] Extracting version $ver..." -ForegroundColor Cyan
-        Expand-Archive -Path $zip -DestinationPath (Get-Property $paths 'install') -Force
-        # El zip suele crear nginx-1.30.3\, lo movemos
-        $sub = Get-ChildItem (Get-Property $paths 'install') -Directory | Where-Object { $_.Name -like "nginx*" } | Select-Object -First 1
+        $installPath = Get-Property $paths 'install'
+
+        # Limpiar cualquier subcarpeta nginx-* residual de extracciones previas
+        Get-ChildItem $installPath -Directory -Force | Where-Object { $_.Name -like "nginx*" } |
+            Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+
+        Expand-Archive -Path $zip -DestinationPath $installPath -Force
+
+        # El zip suele crear nginx-1.30.3\, lo movemos al nivel superior
+        $sub = Get-ChildItem $installPath -Directory | Where-Object { $_.Name -like "nginx*" } | Select-Object -First 1
         if ($sub) {
-            Get-ChildItem $sub.FullName | Move-Item -Destination (Get-Property $paths 'install') -Force
+            # Eliminar destinos existentes para evitar "No se puede crear un archivo que ya existe"
+            Get-ChildItem $sub.FullName | ForEach-Object {
+                $dest = Join-Path $installPath $_.Name
+                if (Test-Path $dest) {
+                    Remove-Item $dest -Recurse -Force -ErrorAction SilentlyContinue
+                }
+                Move-Item $_.FullName -Destination $installPath -Force
+            }
             Remove-Item $sub.FullName -Recurse -Force
         }
     }
