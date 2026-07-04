@@ -127,7 +127,7 @@ try {
 Log "Tipo de objeto config: $($config.GetType().FullName)" "Yellow"
 
 $allKeys = Get-TopLevelKeys $config
-Log "Claves en $ConfigPath: $($allKeys -join ', ')" "DarkGray"
+Log "Claves en ${ConfigPath}: $($allKeys -join ', ')" "DarkGray"
 
 $server = Get-Property $config 'server'
 if (-not $server) { $server = @{} }
