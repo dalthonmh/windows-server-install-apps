@@ -79,15 +79,16 @@ function Install-NginxComponent {
     $dataPRaw = Get-Property $paths 'data'
     $portV = Get-Property $cfg 'port'
 
-    # Normalizar separadores a forward-slash para nginx y garantizar ruta absoluta
-    if ($logPRaw) { $logP = ($logPRaw -replace '\\','/').TrimEnd('/') } else { $logP = 'logs' }
-    if ($dataPRaw) { $dataP = ($dataPRaw -replace '\\','/').TrimEnd('/') } else { $dataP = 'data' }
+    # Usar rutas originales en formato Windows para nginx en Windows
+    if ($logPRaw) { $logP = $logPRaw.TrimEnd('\') } else { $logP = 'logs' }
+    if ($dataPRaw) { $dataP = $dataPRaw.TrimEnd('\') } else { $dataP = 'data' }
 
-    # Asegurar que exista la carpeta de logs que nginx usará
+    # Asegurar que existan las carpetas necesarias
     try { New-Item -ItemType Directory -Path $logPRaw -Force | Out-Null } catch { }
+    try { New-Item -ItemType Directory -Path (Split-Path $targetConf -Parent) -Force | Out-Null } catch { }
 
-    # Reemplazos robustos usando -replace (regex)
-    $content = $content -replace '\{\{logPath\}\}', [Regex]::Escape($logP) -replace '\{\{dataPath\}\}', [Regex]::Escape($dataP) -replace '\{\{port\}\}', [string]$portV
+    # Reemplazos con String.Replace usando rutas Windows (backslashes)
+    $content = $content.Replace('{{logPath}}', $logP).Replace('{{dataPath}}', $dataP).Replace('{{port}}', [string]$portV)
 
     $needsUpdate = $true
     if (Test-Path $targetConf) {
