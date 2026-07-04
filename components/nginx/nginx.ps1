@@ -102,6 +102,19 @@ function Install-NginxComponent {
         Write-Host "[nginx] Configuracion actualizada." -ForegroundColor Green
     }
 
+    # Asegurar que los directorios referenciados en la config existen (error_log, access_log, pid)
+    try {
+        $cfgDir = Split-Path $targetConf -Parent
+        if ($content -match 'error_log\s+"(?<p>[^\"]+)"') { $errPath = $Matches['p'] } elseif ($content -match "error_log\s+(?<p>[^\s;]+)") { $errPath = $Matches['p'] }
+        if ($errPath) {
+            # Resolver rutas relativas respecto al directorio de la config
+            $errPathNorm = $errPath -replace '/','\\\\'
+            if (-not ($errPathNorm -match '^[A-Za-z]:\\\\')) { $errFull = Join-Path $cfgDir $errPathNorm } else { $errFull = $errPathNorm }
+            $errDir = Split-Path $errFull -Parent
+            try { New-Item -ItemType Directory -Path $errDir -Force | Out-Null } catch { }
+        }
+    } catch { }
+
     # Probar sintaxis (compatible PS 5.1)
     $testOutput = & $exe -t -c $targetConf 2>&1
     if ($LASTEXITCODE -ne 0) {
