@@ -64,7 +64,7 @@ function Read-Config([string]$path) {
     if ($ext -eq '.psd1') {
         # Formato recomendado y nativo para PS 5.1
         try {
-            return Import-PowerShellDataFile -Path $path -ErrorAction Stop
+            $res = Import-PowerShellDataFile -Path $path -ErrorAction Stop
         } catch {
             throw "Error importando '$path' (psd1): $_"
         }
@@ -83,9 +83,32 @@ function Read-Config([string]$path) {
         }
 
         # Evitamos el problema anterior de pasar array/string enumerable
-        $parsed = ConvertFrom-Json -InputObject $jsonText
-        return $parsed
+        $res = ConvertFrom-Json -InputObject $jsonText
     }
+
+    # Normalizar: si por alguna razón se obtuvo una cadena, intentar reinterpretarla
+    if ($res -is [string]) {
+        $trim = $res.Trim()
+        if ($trim.StartsWith('{') -and $trim.EndsWith('}')) {
+            try {
+                $maybe = ConvertFrom-Json -InputObject $trim -ErrorAction Stop
+                if ($maybe) { $res = $maybe }
+            } catch { }
+        }
+
+        # Si la cadena parece una literal de hashtable (@{ ... }), intentar evaluarla
+        if ($res -is [string]) {
+            $t = $res.Trim()
+            if ($t.StartsWith('@{')) {
+                try {
+                    $eval = Invoke-Expression $t
+                    if ($eval) { $res = $eval }
+                } catch { }
+            }
+        }
+    }
+
+    return $res
 }
 
 function Log($msg, $color = "White") {
