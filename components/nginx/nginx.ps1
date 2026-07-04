@@ -78,9 +78,7 @@ function Install-NginxComponent {
     $logP = Get-Property $paths 'logs'
     $dataP = Get-Property $paths 'data'
     $portV = Get-Property $cfg 'port'
-    $content = $content.Replace('{{logPath}}', [string]$logP) `
-                       .Replace('{{dataPath}}', [string]$dataP) `
-                       .Replace('{{port}}', [string]$portV)
+    $content = $content.Replace('{{logPath}}', [string]$logP).Replace('{{dataPath}}', [string]$dataP).Replace('{{port}}', [string]$portV)
 
     $needsUpdate = $true
     if (Test-Path $targetConf) {
