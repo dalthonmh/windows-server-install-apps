@@ -75,10 +75,19 @@ function Install-NginxComponent {
     $targetConf = Join-Path (Get-Property $paths 'config') "nginx.conf"
 
     $content = Get-Content $tpl -Raw
-    $logP = Get-Property $paths 'logs'
-    $dataP = Get-Property $paths 'data'
+    $logPRaw = Get-Property $paths 'logs'
+    $dataPRaw = Get-Property $paths 'data'
     $portV = Get-Property $cfg 'port'
-    $content = $content.Replace('{{logPath}}', [string]$logP).Replace('{{dataPath}}', [string]$dataP).Replace('{{port}}', [string]$portV)
+
+    # Normalizar separadores a forward-slash para nginx y garantizar ruta absoluta
+    if ($logPRaw) { $logP = ($logPRaw -replace '\\','/').TrimEnd('/') } else { $logP = 'logs' }
+    if ($dataPRaw) { $dataP = ($dataPRaw -replace '\\','/').TrimEnd('/') } else { $dataP = 'data' }
+
+    # Asegurar que exista la carpeta de logs que nginx usará
+    try { New-Item -ItemType Directory -Path $logPRaw -Force | Out-Null } catch { }
+
+    # Reemplazos robustos usando -replace (regex)
+    $content = $content -replace '\{\{logPath\}\}', [Regex]::Escape($logP) -replace '\{\{dataPath\}\}', [Regex]::Escape($dataP) -replace '\{\{port\}\}', [string]$portV
 
     $needsUpdate = $true
     if (Test-Path $targetConf) {
