@@ -77,4 +77,14 @@
             install = "D:\apps\composer"
         }
     }
+
+    # Neovim (recomendado sobre Vim/GVim moderno)
+    neovim = @{
+        enabled = $true
+        version = "0.12.3"
+
+        paths = @{
+            install = "D:\apps\neovim\0.12.3"
+        }
+    }
 }

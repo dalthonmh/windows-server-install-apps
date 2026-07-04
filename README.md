@@ -135,6 +135,7 @@ Componentes recomendados:
 - `nssm` → instala NSSM y lo agrega al PATH del sistema.
 - `php` → instala PHP 8 thread-safe (x64) y lo agrega al PATH.
 - `composer` → instala Composer automáticamente (sin GUI). Descarga composer.phar + crea wrapper + agrega al PATH.
+- `neovim` → instala Neovim (recomendado). Usa el zip portable y lo agrega al PATH.
 - `apache` → instala Apache 2.4 (Apache Lounge) en puerto 81 + integracion basica PHP.
 - `nginx` → instala Nginx y lo registra como servicio (puede usar NSSM).
 

@@ -1,0 +1,143 @@
+# Componente Neovim
+# Recomendado sobre Vim clásico / GVim.
+# Usa el zip portable oficial (nvim-win64.zip).
+# Se carga dinamicamente desde deploy.ps1
+
+function Get-Property($obj, [string]$name) {
+    if ($null -eq $obj -or [string]::IsNullOrEmpty($name)) { return $null }
+    if ($obj -is [hashtable]) {
+        if ($obj.ContainsKey($name)) { return $obj[$name] }
+        return $null
+    }
+    if ($obj -is [System.Collections.IDictionary]) {
+        if ($obj.Contains($name)) { return $obj[$name] }
+        return $null
+    }
+    if ($obj -is [psobject]) {
+        $prop = $obj.PSObject.Properties[$name]
+        if ($prop) { return $prop.Value }
+        return $null
+    }
+    return $null
+}
+
+function Install-NeovimComponent {
+    param($cfg, $serverCfg, $downloads)
+
+    $drv = $serverCfg
+    $drive = if ($drv -and (Get-Property $drv 'drive')) { Get-Property $drv 'drive' } 
+             elseif ($drv -and (Get-Property $drv 'appDrive')) { Get-Property $drv 'appDrive' } 
+             else { "D:" }
+
+    $ver = Get-Property $cfg 'version'
+    if (-not $ver) { $ver = $null }
+
+    $base = $null
+    if ($downloads) { $base = Get-Property $downloads 'base' }
+    if (-not $base) { $base = "https://dalthonmh.com/bin" }
+
+    $url = Get-Property $cfg 'url'
+    if (-not $url) {
+        if ($ver) {
+            $url = "$base/nvim-win64-$ver.zip"
+        } else {
+            $url = "$base/nvim-win64.zip"
+        }
+    }
+
+    $paths = Get-Property $cfg 'paths'
+    function Get-AbsPath([string]$val, [string]$name, [string]$d, [string]$version) {
+        $base = if ($d -match '^[A-Za-z]') { ($d -replace '[:\\/]+$', '') + ':' } else { 'D:' }
+        if ($val -and ($val -match '^[A-Za-z]:')) { return ([string]$val).TrimEnd('\','/') }
+        if (-not $val -or [string]::IsNullOrWhiteSpace($val)) {
+            switch ($name) {
+                'install' { $val = if ($version) { "apps\neovim\$version" } else { 'apps\neovim' } }
+            }
+        }
+        $clean = $val.TrimStart('\','/').Replace('/', '\')
+        return (Join-Path $base $clean)
+    }
+
+    $installP = Get-Property $paths 'install'
+    $paths = @{
+        install = Get-AbsPath $installP 'install' $drive $ver
+    }
+
+    $cache = "$drive\downloads\cache"
+    $installDir = Get-Property $paths 'install'
+
+    New-Item -ItemType Directory -Path $cache, $installDir -Force | Out-Null
+
+    $nvimExe = Join-Path $installDir "bin\nvim.exe"
+
+    # 1. Descargar (idempotente)
+    $zipName = if ($ver) { "nvim-win64-$ver.zip" } else { "nvim-win64.zip" }
+    $zip = Join-Path $cache $zipName
+    if (-not (Test-Path $zip)) {
+        Write-Host "[neovim] Downloading..." -ForegroundColor Cyan
+        Invoke-WebRequest -Uri $url -OutFile $zip -UseBasicParsing
+    }
+
+    # 2. Extraer solo si no existe el ejecutable
+    if (-not (Test-Path $nvimExe)) {
+        Write-Host "[neovim] Extracting version $ver..." -ForegroundColor Cyan
+
+        # Limpiar cualquier subcarpeta nvim residual
+        Get-ChildItem $installDir -Directory -Force | Where-Object { $_.Name -like "nvim*" } |
+            Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+
+        Expand-Archive -Path $zip -DestinationPath $installDir -Force
+
+        # El zip oficial suele tener estructura doble: nvim-win64\nvim-win64\...
+        # Aplanamos hasta que no queden subcarpetas nvim-*
+        while ($true) {
+            $sub = Get-ChildItem $installDir -Directory | Where-Object { $_.Name -like "nvim*" } | Select-Object -First 1
+            if ($sub) {
+                Get-ChildItem $sub.FullName | Move-Item -Destination $installDir -Force
+                Remove-Item $sub.FullName -Recurse -Force
+            } else {
+                break
+            }
+        }
+    }
+
+    # 3. Agregar bin al PATH del sistema
+    $binDir = Join-Path $installDir "bin"
+    Ensure-NeovimInPath -binDir $binDir
+
+    Write-Host "[neovim] Ready: $installDir" -ForegroundColor Green
+}
+
+function Ensure-NeovimInPath {
+    param($binDir)
+    try {
+        $currentPath = [Environment]::GetEnvironmentVariable("Path", "Machine")
+        if ($currentPath -notlike "*$binDir*") {
+            $newPath = ($currentPath.TrimEnd(';') + ";$binDir").TrimStart(';')
+            [Environment]::SetEnvironmentVariable("Path", $newPath, "Machine")
+            $env:Path = ($env:Path.TrimEnd(';') + ";$binDir").TrimStart(';')
+            Write-Host "[neovim] Added to system PATH." -ForegroundColor Green
+        }
+    } catch {
+        Write-Host "[neovim] Could not modify global PATH (run as Administrator if needed)." -ForegroundColor Yellow
+    }
+}
+
+function Test-NeovimComponent {
+    param($cfg, $serverCfg, $downloads)
+    $drv = $serverCfg
+    $drive = if ($drv -and (Get-Property $drv 'drive')) { Get-Property $drv 'drive' } else { "D:" }
+
+    $installP = Get-Property (Get-Property $cfg 'paths') 'install'
+    if (-not $installP) { $installP = "apps\neovim" }
+    $installDir = if ($installP -match '^[A-Za-z]:') { $installP } else { Join-Path "$drive\" $installP.TrimStart('\','/') }
+
+    $nvimExe = Join-Path $installDir "bin\nvim.exe"
+    if (Test-Path $nvimExe) {
+        Write-Host "Neovim : installed ($installDir)"
+    } else {
+        Write-Host "Neovim : NOT INSTALLED"
+    }
+}
+
+# Nota: Se usa dot-sourcing desde deploy.ps1
