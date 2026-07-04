@@ -107,13 +107,8 @@ function Install-NginxComponent {
 
     $exe = Join-Path (Get-Property $paths 'install') "nginx.exe"
 
-    # 1. Descargar a caché SOLO si el zip no existe (evita re-descargas en cada ejecución)
-    #    El zip queda en $drive\downloads\cache para siempre (por versión).
-    $zip = Join-Path $cache "nginx-$ver.zip"
-    if (-not (Test-Path $zip)) {
-        Write-Host "[nginx] Downloading..." -ForegroundColor Cyan
-        Invoke-WebRequest -Uri $url -OutFile $zip -UseBasicParsing
-    }
+    # 1. Descargar usando caché compartida (solo una vez por versión)
+    $zip = Get-CachedDownload -Url $url -CacheDir $cache -FileName "nginx-$ver.zip" -Label "[nginx]"
 
     # 2. Extraer solo si no existe (idempotencia)
     if (-not (Test-Path $exe)) {

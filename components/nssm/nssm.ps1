@@ -53,11 +53,7 @@ function Install-NssmComponent {
 
     New-Item -ItemType Directory -Path $cache, $nssmDir -Force | Out-Null
 
-    $zip = Join-Path $cache "nssm-$ver.zip"
-    if (-not (Test-Path $zip)) {
-        # Descargar a caché SOLO si no existe (evita re-descargas en cada ejecución)
-        Invoke-WebRequest $url -OutFile $zip -UseBasicParsing
-    }
+    $zip = Get-CachedDownload -Url $url -CacheDir $cache -FileName "nssm-$ver.zip" -Label "[nssm]"
 
     Expand-Archive $zip $cache -Force
     $found = Get-ChildItem $cache -Recurse -Filter nssm.exe | Select-Object -First 1

@@ -98,13 +98,8 @@ function Install-ApacheComponent {
 
     $httpdExe = Join-Path $installDir "bin\httpd.exe"
 
-    # 1. Descargar a caché SOLO si el zip no existe (evita re-descargas en cada ejecución)
-    #    El zip queda en $drive\downloads\cache para siempre (por versión).
-    $zip = Join-Path $cache "httpd-$ver.zip"
-    if (-not (Test-Path $zip)) {
-        Write-Host "[apache] Downloading..." -ForegroundColor Cyan
-        Invoke-WebRequest -Uri $url -OutFile $zip -UseBasicParsing
-    }
+    # 1. Descargar usando caché compartida (solo una vez por versión)
+    $zip = Get-CachedDownload -Url $url -CacheDir $cache -FileName "httpd-$ver.zip" -Label "[apache]"
 
     # 2. Extraer
     if (-not (Test-Path $httpdExe)) {

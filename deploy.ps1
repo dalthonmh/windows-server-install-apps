@@ -109,6 +109,9 @@ Log "Config object type: $($config.GetType().FullName)" "Yellow"
 $allKeys = Get-TopLevelKeys $config
 Log "Keys in ${ConfigPath}: $($allKeys -join ', ')" "DarkGray"
 
+# Load shared download helper (ensures files are downloaded only once to cache)
+. (Join-Path $PSScriptRoot "lib\Download-Cached.ps1")
+
 $server = Get-Property $config 'server'
 if (-not $server) { $server = @{} }
 

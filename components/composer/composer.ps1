@@ -58,26 +58,20 @@ function Install-ComposerComponent {
 
     $isZip = $url -like "*.zip"
 
-    # 1. Descargar el zip/phar a caché SOLO si no existe en $drive\downloads\cache
-    #    Esto hace que la descarga ocurra UNA sola vez por versión.
-    #    Ejecuciones posteriores de deploy.ps1 no tocan la red para este componente.
-    $downloadFile = if ($isZip) {
-        $filename = if ($ver) { "composer-$ver.phar.zip" } else { "composer.phar.zip" }
-        Join-Path $cache $filename
+    if ($isZip) {
+        $zipFileName = if ($ver) { "composer-$ver.phar.zip" } else { "composer.phar.zip" }
+        $downloadFile = Get-CachedDownload -Url $url -CacheDir $cache -FileName $zipFileName -Label "[composer]"
     } else {
-        $phar
+        # Direct .phar: download to cache, then ensure it's in target
+        $cachedPhar = Get-CachedDownload -Url $url -CacheDir $cache -FileName "composer.phar" -Label "[composer]"
+        if (-not (Test-Path $phar)) {
+            Copy-Item $cachedPhar $phar -Force
+        }
+        $downloadFile = $cachedPhar
     }
 
-    if ($isZip -and -not (Test-Path $downloadFile)) {
-        Write-Host "[composer] Downloading..." -ForegroundColor Cyan
-        Invoke-WebRequest -Uri $url -OutFile $downloadFile -UseBasicParsing
-    } elseif (-not $isZip -and -not (Test-Path $phar)) {
-        Write-Host "[composer] Downloading..." -ForegroundColor Cyan
-        Invoke-WebRequest -Uri $url -OutFile $phar -UseBasicParsing
-    }
-
-    # 2. Extraer / instalar solo si el .phar final no existe
-    if (-not (Test-Path $phar) -and $isZip) {
+    # Extraer solo si el .phar final no existe (para zips)
+    if ($isZip -and -not (Test-Path $phar)) {
         Write-Host "[composer] Extracting..." -ForegroundColor Cyan
         Expand-Archive -Path $downloadFile -DestinationPath $cache -Force
 
@@ -88,7 +82,7 @@ function Install-ComposerComponent {
             throw "[composer] No se encontró ningún archivo .phar dentro del zip"
         }
 
-        # NO borrar $downloadFile (es el zip en caché). Solo limpiar la carpeta extraída temporal si es distinta.
+        # NO borrar el zip de caché. Solo limpiar carpeta temporal si es distinta.
         $extractDir = $foundPhar.Directory.FullName
         if ($extractDir -ne $cache -and $extractDir -ne $composerDir) {
             Remove-Item $extractDir -Recurse -Force -ErrorAction SilentlyContinue
