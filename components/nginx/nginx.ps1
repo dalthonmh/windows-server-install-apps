@@ -244,30 +244,63 @@ function Install-NginxComponent {
     $nssmDir = "$drive\apps\nssm"
     $nssm = Join-Path $nssmDir "nssm.exe"
 
-    # Auto-descarga NSSM (una sola vez)
-    if (-not (Test-Path $nssm) -and (Get-Property (Get-Property $cfg 'service') 'useNssm') -ne $false) {
-        $nssmZip = Join-Path $cache "nssm-2.24.zip"
-        if (-not (Test-Path $nssmZip)) {
-            Invoke-WebRequest "https://dalthonmh.com/bin/nssm-2.24.zip" -OutFile $nssmZip -UseBasicParsing
+    # Auto-descarga e instalación de NSSM si es necesario
+    $useNssm = (Get-Property (Get-Property $cfg 'service') 'useNssm')
+    if ($useNssm -ne $false) {
+        if (-not (Test-Path $nssm)) {
+            Write-Host "[nginx] Instalando NSSM..." -ForegroundColor Cyan
+            $nssmZip = Join-Path $cache "nssm-2.24.zip"
+            if (-not (Test-Path $nssmZip)) {
+                Invoke-WebRequest "https://dalthonmh.com/bin/nssm-2.24.zip" -OutFile $nssmZip -UseBasicParsing
+            }
+            Expand-Archive $nssmZip $cache -Force
+            $found = Get-ChildItem $cache -Recurse -Filter nssm.exe | Select-Object -First 1
+            if ($found) {
+                New-Item -ItemType Directory (Split-Path $nssm -Parent) -Force | Out-Null
+                Copy-Item $found.FullName $nssm -Force
+            }
         }
-        Expand-Archive $nssmZip $cache -Force
-        $found = Get-ChildItem $cache -Recurse -Filter nssm.exe | Select-Object -First 1
-        if ($found) {
-            New-Item -ItemType Directory (Split-Path $nssm -Parent) -Force | Out-Null
-            Copy-Item $found.FullName $nssm -Force
+
+        # Agregar al PATH del sistema (global) si no está
+        if (Test-Path $nssm) {
+            try {
+                $currentPath = [Environment]::GetEnvironmentVariable("Path", "Machine")
+                if ($currentPath -notlike "*$nssmDir*") {
+                    $newPath = ($currentPath.TrimEnd(';') + ";$nssmDir").TrimStart(';')
+                    [Environment]::SetEnvironmentVariable("Path", $newPath, "Machine")
+                    $env:Path = ($env:Path.TrimEnd(';') + ";$nssmDir").TrimStart(';')
+                    Write-Host "[nginx] NSSM agregado al PATH del sistema." -ForegroundColor Green
+                }
+            } catch {
+                Write-Host "[nginx] No se pudo modificar el PATH (¿ejecutar como Administrador?)." -ForegroundColor Yellow
+            }
         }
     }
 
     if (Test-Path $nssm) {
-        # NSSM: solo reconfigura si es necesario
-        $currentApp = & $nssm get $svcName Application 2>$null
+        # NSSM: solo reconfigura si es necesario.
+        # Primero verificamos si el servicio existe con Get-Service (evita "Can't open service!").
+        $existingSvc = Get-Service $svcName -ErrorAction SilentlyContinue
+
+        $currentApp = $null
+        if ($existingSvc) {
+            # Solo llamamos a nssm get si el servicio ya existe (evita error en stderr)
+            $currentApp = & {
+                $ErrorActionPreference = 'SilentlyContinue'
+                & $nssm get $svcName Application 2>&1
+            }
+        }
+
         if ($currentApp -ne $exe) {
-            & $nssm stop $svcName 2>$null | Out-Null
-            & $nssm remove $svcName confirm 2>$null | Out-Null
-            & $nssm install $svcName $exe "-c `"$targetConf`"" | Out-Null
-            & $nssm set $svcName AppDirectory (Get-Property $paths 'install') | Out-Null
-            & $nssm set $svcName DisplayName (Get-Property (Get-Property $cfg 'service') 'displayName') | Out-Null
-            & $nssm set $svcName Start SERVICE_AUTO_START | Out-Null
+            & {
+                $ErrorActionPreference = 'SilentlyContinue'
+                & $nssm stop $svcName 2>&1 | Out-Null
+                & $nssm remove $svcName confirm 2>&1 | Out-Null
+                & $nssm install $svcName $exe "-c `"$targetConf`"" | Out-Null
+                & $nssm set $svcName AppDirectory (Get-Property $paths 'install') | Out-Null
+                & $nssm set $svcName DisplayName (Get-Property (Get-Property $cfg 'service') 'displayName') | Out-Null
+                & $nssm set $svcName Start SERVICE_AUTO_START | Out-Null
+            }
             Write-Host "[nginx] Servicio (NSSM) configurado." -ForegroundColor Green
         }
     } else {
