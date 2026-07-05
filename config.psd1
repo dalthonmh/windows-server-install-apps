@@ -13,11 +13,6 @@
         base = "https://dalthonmh.com/bin"
     }
 
-    nssm = @{
-        enabled = $true
-        version = "2.24"
-    }
-
     nginx = @{
         enabled = $true
         version = "1.30.3"
