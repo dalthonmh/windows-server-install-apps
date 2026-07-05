@@ -39,7 +39,12 @@ function Install-NssmComponent {
         $url = "$base/nssm-$ver.zip"
     }
 
-    $nssmDir = "$drive\apps\nssm"
+    $paths = Get-Property $cfg 'paths'
+    $nssmDir = if ($paths -and (Get-Property $paths 'install')) {
+        Get-Property $paths 'install'
+    } else {
+        "$drive\tools\nssm"
+    }
     $nssm = Join-Path $nssmDir "nssm.exe"
     $cache = "$drive\downloads\cache"
 
@@ -55,12 +60,18 @@ function Install-NssmComponent {
 
     $zip = Get-CachedDownload -Url $url -CacheDir $cache -FileName "nssm-$ver.zip" -Label "[nssm]"
 
-    Expand-Archive $zip $cache -Force
-    $found = Get-ChildItem $cache -Recurse -Filter nssm.exe | Select-Object -First 1
-    if ($found) {
-        Copy-Item $found.FullName $nssm -Force
-    } else {
-        throw "[nssm] nssm.exe not found inside the zip"
+    try {
+        Expand-Archive $zip $cache -Force
+        $found = Get-ChildItem $cache -Recurse -Filter nssm.exe | Select-Object -First 1
+        if ($found) {
+            Copy-Item $found.FullName $nssm -Force
+        } else {
+            throw "[nssm] nssm.exe not found inside the zip"
+        }
+    } catch {
+        Write-Host "[nssm] Extract failed (bad or corrupted zip). Removing from cache." -ForegroundColor Red
+        Remove-Item $zip -Force -ErrorAction SilentlyContinue
+        throw
     }
 
     Ensure-NssmInPath -nssmDir $nssmDir
@@ -86,7 +97,14 @@ function Test-NssmComponent {
     param($cfg, $serverCfg, $downloads)
     $drv = $serverCfg
     $drive = if ($drv -and (Get-Property $drv 'drive')) { Get-Property $drv 'drive' } else { "D:" }
-    $nssm = "$drive\apps\nssm\nssm.exe"
+
+    $paths = Get-Property $cfg 'paths'
+    $nssmDir = if ($paths -and (Get-Property $paths 'install')) {
+        Get-Property $paths 'install'
+    } else {
+        "$drive\tools\nssm"
+    }
+    $nssm = Join-Path $nssmDir "nssm.exe"
 
     if (Test-Path $nssm) {
         Write-Host "NSSM : installed ($nssm)"

@@ -74,13 +74,19 @@ function Install-PhpComponent {
         # Limpiar residual si existe
         Get-ChildItem $installPath -Directory -Force | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
 
-        Expand-Archive -Path $zip -DestinationPath $installPath -Force
+        try {
+            Expand-Archive -Path $zip -DestinationPath $installPath -Force
 
-        # El zip de PHP suele estar plano o con subcarpeta, movemos si hace falta
-        $sub = Get-ChildItem $installPath -Directory | Where-Object { $_.Name -like "php*" } | Select-Object -First 1
-        if ($sub) {
-            Get-ChildItem $sub.FullName | Move-Item -Destination $installPath -Force
-            Remove-Item $sub.FullName -Recurse -Force
+            # El zip de PHP suele estar plano o con subcarpeta, movemos si hace falta
+            $sub = Get-ChildItem $installPath -Directory | Where-Object { $_.Name -like "php*" } | Select-Object -First 1
+            if ($sub) {
+                Get-ChildItem $sub.FullName | Move-Item -Destination $installPath -Force
+                Remove-Item $sub.FullName -Recurse -Force
+            }
+        } catch {
+            Write-Host "[php] Extract failed (bad or corrupted zip). Removing from cache." -ForegroundColor Red
+            Remove-Item $zip -Force -ErrorAction SilentlyContinue
+            throw
         }
     }
 

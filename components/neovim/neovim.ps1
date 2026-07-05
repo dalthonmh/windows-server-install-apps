@@ -82,18 +82,24 @@ function Install-NeovimComponent {
         Get-ChildItem $installDir -Directory -Force | Where-Object { $_.Name -like "nvim*" } |
             Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
 
-        Expand-Archive -Path $zip -DestinationPath $installDir -Force
+        try {
+            Expand-Archive -Path $zip -DestinationPath $installDir -Force
 
-        # El zip oficial suele tener estructura doble: nvim-win64\nvim-win64\...
-        # Aplanamos hasta que no queden subcarpetas nvim-*
-        while ($true) {
-            $sub = Get-ChildItem $installDir -Directory | Where-Object { $_.Name -like "nvim*" } | Select-Object -First 1
-            if ($sub) {
-                Get-ChildItem $sub.FullName | Move-Item -Destination $installDir -Force
-                Remove-Item $sub.FullName -Recurse -Force
-            } else {
-                break
+            # El zip oficial suele tener estructura doble: nvim-win64\nvim-win64\...
+            # Aplanamos hasta que no queden subcarpetas nvim-*
+            while ($true) {
+                $sub = Get-ChildItem $installDir -Directory | Where-Object { $_.Name -like "nvim*" } | Select-Object -First 1
+                if ($sub) {
+                    Get-ChildItem $sub.FullName | Move-Item -Destination $installDir -Force
+                    Remove-Item $sub.FullName -Recurse -Force
+                } else {
+                    break
+                }
             }
+        } catch {
+            Write-Host "[neovim] Extract failed (bad or corrupted zip). Removing from cache." -ForegroundColor Red
+            Remove-Item $zip -Force -ErrorAction SilentlyContinue
+            throw
         }
     }
 

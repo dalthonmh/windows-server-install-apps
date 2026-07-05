@@ -109,16 +109,22 @@ function Install-ApacheComponent {
         Get-ChildItem $installDir -Directory -Force | Where-Object { $_.Name -like "*apache*" -or $_.Name -like "*httpd*" } |
             Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
 
-        Expand-Archive -Path $zip -DestinationPath $installDir -Force
+        try {
+            Expand-Archive -Path $zip -DestinationPath $installDir -Force
 
-        # Mover contenido si el zip crea subcarpeta (ej Apache24 o httpd-2.4.68)
-        $sub = Get-ChildItem $installDir -Directory | Where-Object { 
-            $_.Name -like "*apache*" -or $_.Name -like "*httpd*" -or $_.Name -like "Apache*" 
-        } | Select-Object -First 1
+            # Mover contenido si el zip crea subcarpeta (ej Apache24 o httpd-2.4.68)
+            $sub = Get-ChildItem $installDir -Directory | Where-Object { 
+                $_.Name -like "*apache*" -or $_.Name -like "*httpd*" -or $_.Name -like "Apache*" 
+            } | Select-Object -First 1
 
-        if ($sub) {
-            Get-ChildItem $sub.FullName | Move-Item -Destination $installDir -Force
-            Remove-Item $sub.FullName -Recurse -Force
+            if ($sub) {
+                Get-ChildItem $sub.FullName | Move-Item -Destination $installDir -Force
+                Remove-Item $sub.FullName -Recurse -Force
+            }
+        } catch {
+            Write-Host "[apache] Extract failed (bad or corrupted zip). Removing from cache so it will be re-downloaded next time." -ForegroundColor Red
+            Remove-Item $zip -Force -ErrorAction SilentlyContinue
+            throw "[apache] Could not extract Apache. Bad download was cleaned; re-run deploy.ps1."
         }
     }
 

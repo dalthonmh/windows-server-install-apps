@@ -28,5 +28,18 @@ function Get-CachedDownload {
         Invoke-WebRequest -Uri $Url -OutFile $cachedFile -UseBasicParsing
     }
 
+    # Basic validation for zip files (to catch corrupted downloads early)
+    if ($FileName -like "*.zip" -and (Test-Path $cachedFile)) {
+        try {
+            $null = [System.IO.Compression.ZipFile]::OpenRead($cachedFile).Dispose()
+        } catch {
+            Write-Host "Warning: Cached file $FileName appears corrupted. Removing it." -ForegroundColor Yellow
+            Remove-Item $cachedFile -Force -ErrorAction SilentlyContinue
+            # Re-download
+            Write-Host $msg -ForegroundColor Cyan
+            Invoke-WebRequest -Uri $Url -OutFile $cachedFile -UseBasicParsing
+        }
+    }
+
     return $cachedFile
 }

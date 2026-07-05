@@ -119,20 +119,26 @@ function Install-NginxComponent {
         Get-ChildItem $installPath -Directory -Force | Where-Object { $_.Name -like "nginx*" } |
             Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
 
-        Expand-Archive -Path $zip -DestinationPath $installPath -Force
+        try {
+            Expand-Archive -Path $zip -DestinationPath $installPath -Force
 
-        # El zip suele crear nginx-1.30.3\, lo movemos al nivel superior
-        $sub = Get-ChildItem $installPath -Directory | Where-Object { $_.Name -like "nginx*" } | Select-Object -First 1
-        if ($sub) {
-            # Eliminar destinos existentes para evitar "No se puede crear un archivo que ya existe"
-            Get-ChildItem $sub.FullName | ForEach-Object {
-                $dest = Join-Path $installPath $_.Name
-                if (Test-Path $dest) {
-                    Remove-Item $dest -Recurse -Force -ErrorAction SilentlyContinue
+            # El zip suele crear nginx-1.30.3\, lo movemos al nivel superior
+            $sub = Get-ChildItem $installPath -Directory | Where-Object { $_.Name -like "nginx*" } | Select-Object -First 1
+            if ($sub) {
+                # Eliminar destinos existentes para evitar "No se puede crear un archivo que ya existe"
+                Get-ChildItem $sub.FullName | ForEach-Object {
+                    $dest = Join-Path $installPath $_.Name
+                    if (Test-Path $dest) {
+                        Remove-Item $dest -Recurse -Force -ErrorAction SilentlyContinue
+                    }
+                    Move-Item $_.FullName -Destination $installPath -Force
                 }
-                Move-Item $_.FullName -Destination $installPath -Force
+                Remove-Item $sub.FullName -Recurse -Force
             }
-            Remove-Item $sub.FullName -Recurse -Force
+        } catch {
+            Write-Host "[nginx] Extract failed (bad or corrupted zip). Removing from cache." -ForegroundColor Red
+            Remove-Item $zip -Force -ErrorAction SilentlyContinue
+            throw
         }
     }
 
