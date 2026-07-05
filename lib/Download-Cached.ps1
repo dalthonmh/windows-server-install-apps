@@ -25,21 +25,19 @@ function Get-CachedDownload {
     if (-not (Test-Path $cachedFile)) {
         $msg = if ($Label) { "$Label Downloading $FileName..." } else { "Downloading $FileName..." }
         Write-Host $msg -ForegroundColor Cyan
-        Invoke-WebRequest -Uri $Url -OutFile $cachedFile -UseBasicParsing
-    }
 
-    # Basic validation for zip files (to catch corrupted downloads early)
-    if ($FileName -like "*.zip" -and (Test-Path $cachedFile)) {
+        # Disable progress for faster downloads on servers
+        $oldProgress = $ProgressPreference
+        $ProgressPreference = 'SilentlyContinue'
         try {
-            $null = [System.IO.Compression.ZipFile]::OpenRead($cachedFile).Dispose()
-        } catch {
-            Write-Host "Warning: Cached file $FileName appears corrupted. Removing it." -ForegroundColor Yellow
-            Remove-Item $cachedFile -Force -ErrorAction SilentlyContinue
-            # Re-download
-            Write-Host $msg -ForegroundColor Cyan
             Invoke-WebRequest -Uri $Url -OutFile $cachedFile -UseBasicParsing
+        } finally {
+            $ProgressPreference = $oldProgress
         }
     }
+
+    # Note: We no longer auto-remove on validation here.
+    # If a cached zip is bad, the extract in the component will catch it and remove.
 
     return $cachedFile
 }

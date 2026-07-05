@@ -113,11 +113,18 @@ function Install-NeovimComponent {
 function Ensure-NeovimInPath {
     param($binDir)
     try {
-        $currentPath = [Environment]::GetEnvironmentVariable("Path", "Machine")
-        if ($currentPath -notlike "*$binDir*") {
-            $newPath = ($currentPath.TrimEnd(';') + ";$binDir").TrimStart(';')
+        $currentMachine = [Environment]::GetEnvironmentVariable("Path", "Machine")
+        $currentEnv = $env:Path
+
+        # Always ensure in current session
+        if ($currentEnv -notlike "*$binDir*") {
+            $env:Path = ($currentEnv.TrimEnd(';') + ";$binDir").TrimStart(';')
+        }
+
+        # Add to Machine if not present
+        if ($currentMachine -notlike "*$binDir*") {
+            $newPath = ($currentMachine.TrimEnd(';') + ";$binDir").TrimStart(';')
             [Environment]::SetEnvironmentVariable("Path", $newPath, "Machine")
-            $env:Path = ($env:Path.TrimEnd(';') + ";$binDir").TrimStart(';')
             Write-Host "[neovim] Added to system PATH." -ForegroundColor Green
         }
     } catch {

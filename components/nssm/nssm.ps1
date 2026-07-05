@@ -40,10 +40,13 @@ function Install-NssmComponent {
     }
 
     $paths = Get-Property $cfg 'paths'
-    $nssmDir = if ($paths -and (Get-Property $paths 'install')) {
-        Get-Property $paths 'install'
+    $installP = if ($paths) { Get-Property $paths 'install' } else { $null }
+    if ($installP -and ($installP -match '^[A-Za-z]:')) {
+        $nssmDir = $installP
+    } elseif ($installP) {
+        $nssmDir = Join-Path "$drive\" ($installP.TrimStart('\','/').Replace('/','\'))
     } else {
-        "$drive\tools\nssm"
+        $nssmDir = "$drive\tools\nssm"
     }
     $nssm = Join-Path $nssmDir "nssm.exe"
     $cache = "$drive\downloads\cache"
@@ -81,11 +84,18 @@ function Install-NssmComponent {
 function Ensure-NssmInPath {
     param($nssmDir)
     try {
-        $currentPath = [Environment]::GetEnvironmentVariable("Path", "Machine")
-        if ($currentPath -notlike "*$nssmDir*") {
-            $newPath = ($currentPath.TrimEnd(';') + ";$nssmDir").TrimStart(';')
+        $currentMachine = [Environment]::GetEnvironmentVariable("Path", "Machine")
+        $currentEnv = $env:Path
+
+        # Always ensure in current session's PATH
+        if ($currentEnv -notlike "*$nssmDir*") {
+            $env:Path = ($currentEnv.TrimEnd(';') + ";$nssmDir").TrimStart(';')
+        }
+
+        # Add to Machine PATH if not present (for future shells)
+        if ($currentMachine -notlike "*$nssmDir*") {
+            $newPath = ($currentMachine.TrimEnd(';') + ";$nssmDir").TrimStart(';')
             [Environment]::SetEnvironmentVariable("Path", $newPath, "Machine")
-            $env:Path = ($env:Path.TrimEnd(';') + ";$nssmDir").TrimStart(';')
             Write-Host "[nssm] Added to system PATH." -ForegroundColor Green
         }
     } catch {
@@ -99,10 +109,13 @@ function Test-NssmComponent {
     $drive = if ($drv -and (Get-Property $drv 'drive')) { Get-Property $drv 'drive' } else { "D:" }
 
     $paths = Get-Property $cfg 'paths'
-    $nssmDir = if ($paths -and (Get-Property $paths 'install')) {
-        Get-Property $paths 'install'
+    $installP = if ($paths) { Get-Property $paths 'install' } else { $null }
+    if ($installP -and ($installP -match '^[A-Za-z]:')) {
+        $nssmDir = $installP
+    } elseif ($installP) {
+        $nssmDir = Join-Path "$drive\" ($installP.TrimStart('\','/').Replace('/','\'))
     } else {
-        "$drive\tools\nssm"
+        $nssmDir = "$drive\tools\nssm"
     }
     $nssm = Join-Path $nssmDir "nssm.exe"
 
