@@ -281,7 +281,7 @@ function Install-NginxComponent {
     $svcName = Get-Property (Get-Property $cfg 'service') 'name'
     $useNssm = (Get-Property (Get-Property $cfg 'service') 'useNssm')
 
-    $nssm = "$drive\apps\nssm\nssm.exe"
+    $nssm = "$drive\tools\nssm\nssm.exe"
     $hasNssm = (Test-Path $nssm) -and ($useNssm -ne $false)
 
     if ($hasNssm) {
@@ -305,6 +305,9 @@ function Install-NginxComponent {
                 & $nssm set $svcName AppDirectory (Get-Property $paths 'install') | Out-Null
                 & $nssm set $svcName DisplayName (Get-Property (Get-Property $cfg 'service') 'displayName') | Out-Null
                 & $nssm set $svcName Start SERVICE_AUTO_START | Out-Null
+                & $nssm set $svcName AppStdout "$drive\logs\nginx\stdout.log" | Out-Null
+                & $nssm set $svcName AppStderr "$drive\logs\nginx\stderr.log" | Out-Null
+                & $nssm set $svcName AppThrottle 1000 | Out-Null
             }
             Write-Host "[nginx] Service configured with NSSM." -ForegroundColor Green
         }

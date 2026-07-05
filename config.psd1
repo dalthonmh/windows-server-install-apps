@@ -13,6 +13,15 @@
         base = "https://dalthonmh.com/bin"
     }
 
+    nssm = @{
+        enabled = $true
+        version = "2.24"
+
+        paths = @{
+            install = "tools\nssm"
+        }
+    }
+
     nginx = @{
         enabled = $true
         version = "1.30.3"
@@ -70,15 +79,6 @@
 
         paths = @{
             install = "tools\composer"
-        }
-    }
-
-    nssm = @{
-        enabled = $true
-        version = "2.24"
-
-        paths = @{
-            install = "tools\nssm"
         }
     }
 

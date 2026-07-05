@@ -133,6 +133,9 @@ function Install-ApacheComponent {
     if (Test-Path $httpdConf) {
         $content = Get-Content $httpdConf -Raw
 
+        # Set ServerRoot correctly
+        $content = $content -replace '(?m)^ServerRoot\s+.*$', "ServerRoot `"$installDir`""
+
         # Cambiar Listen al puerto deseado
         $content = $content -replace '(?m)^Listen\s+.*$', "Listen $port"
 
@@ -150,7 +153,7 @@ function Install-ApacheComponent {
 
             # Busqueda automatica si existe una carpeta php en apps
             if (-not (Test-Path (Join-Path $phpPath "php-cgi.exe"))) {
-                $foundPhp = Get-ChildItem "$drive\apps" -Directory -ErrorAction SilentlyContinue |
+                $foundPhp = Get-ChildItem "$drive\tools" -Directory -ErrorAction SilentlyContinue |
                     Where-Object { $_.Name -like "php*" } | Select-Object -First 1
                 if ($foundPhp) {
                     $phpPath = $foundPhp.FullName
@@ -188,7 +191,7 @@ DirectoryIndex index.html index.php
     # 4. Servicio con NSSM (si esta disponible)
     $svcName = Get-Property (Get-Property $cfg 'service') 'name'
     $useNssm = (Get-Property (Get-Property $cfg 'service') 'useNssm')
-    $nssm = "$drive\apps\nssm\nssm.exe"
+    $nssm = "$drive\tools\nssm\nssm.exe"
 
     if ((Test-Path $nssm) -and ($useNssm -ne $false)) {
         $existingSvc = Get-Service $svcName -ErrorAction SilentlyContinue
@@ -210,6 +213,9 @@ DirectoryIndex index.html index.php
                 & $nssm set $svcName AppParameters "-f `"$httpdConf`"" | Out-Null
                 & $nssm set $svcName DisplayName (Get-Property (Get-Property $cfg 'service') 'displayName') | Out-Null
                 & $nssm set $svcName Start SERVICE_AUTO_START | Out-Null
+                & $nssm set $svcName AppStdout "$drive\logs\apache\stdout.log" | Out-Null
+                & $nssm set $svcName AppStderr "$drive\logs\apache\stderr.log" | Out-Null
+                & $nssm set $svcName AppThrottle 1000 | Out-Null
             }
             Write-Host "[apache] Service configured with NSSM." -ForegroundColor Green
         }
