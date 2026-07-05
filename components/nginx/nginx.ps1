@@ -58,9 +58,9 @@ function Install-NginxComponent {
         if ($val -and ($val -match '^[A-Za-z]:')) { return ([string]$val).TrimEnd('\','/') }
         if (-not $val -or [string]::IsNullOrWhiteSpace($val)) {
             switch ($name) {
-                'install' { $val = if ($version) { "apps\nginx\$version" } else { 'apps\nginx' } }
+                'install' { $val = if ($version) { "tools\nginx\$version" } else { 'tools\nginx' } }
                 'config'  { $val = 'config\nginx' }
-                'data'    { $val = 'data\nginx' }
+                'data'    { $val = 'www' }
                 'logs'    { $val = 'logs\nginx' }
             }
         }

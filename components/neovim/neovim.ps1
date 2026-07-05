@@ -51,7 +51,7 @@ function Install-NeovimComponent {
         if ($val -and ($val -match '^[A-Za-z]:')) { return ([string]$val).TrimEnd('\','/') }
         if (-not $val -or [string]::IsNullOrWhiteSpace($val)) {
             switch ($name) {
-                'install' { $val = if ($version) { "apps\neovim\$version" } else { 'apps\neovim' } }
+                'install' { $val = if ($version) { "tools\neovim\$version" } else { 'tools\neovim' } }
             }
         }
         $clean = $val.TrimStart('\','/').Replace('/', '\')

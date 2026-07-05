@@ -49,9 +49,9 @@ function Install-ApacheComponent {
         if ($val -and ($val -match '^[A-Za-z]:')) { return ([string]$val).TrimEnd('\','/') }
         if (-not $val -or [string]::IsNullOrWhiteSpace($val)) {
             switch ($name) {
-                'install' { $val = if ($version) { "apps\apache\$version" } else { 'apps\apache' } }
+                'install' { $val = if ($version) { "tools\apache\$version" } else { 'tools\apache' } }
                 'config'  { $val = 'config\apache' }
-                'data'    { $val = 'data\apache' }
+                'data'    { $val = 'www' }
                 'logs'    { $val = 'logs\apache' }
             }
         }
@@ -139,7 +139,7 @@ function Install-ApacheComponent {
         # Agregar configuracion de PHP si no existe todavia
         if ($content -notmatch 'php-cgi') {
             # Intentar detectar php instalado (por convencion o por paths del config)
-            $phpPath = "$drive\apps\php\8.2.31"
+            $phpPath = "$drive\tools\php\8.2.31"
             $phpCfg = Get-Property $cfg 'php'
             if ($phpCfg) {
                 $phpInstall = Get-Property (Get-Property $phpCfg 'paths') 'install'

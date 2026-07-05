@@ -46,7 +46,7 @@ function Install-PhpComponent {
         if ($val -and ($val -match '^[A-Za-z]:')) { return ([string]$val).TrimEnd('\','/') }
         if (-not $val -or [string]::IsNullOrWhiteSpace($val)) {
             switch ($name) {
-                'install' { $val = if ($version) { "apps\php\$version" } else { 'apps\php' } }
+                'install' { $val = if ($version) { "tools\php\$version" } else { 'tools\php' } }
             }
         }
         $clean = $val.TrimStart('\','/').Replace('/', '\')

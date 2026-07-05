@@ -18,10 +18,10 @@
         version = "1.30.3"
 
         paths = @{
-            install = "D:\tools\nginx\1.30.3"
-            config  = "D:\config\nginx"
-            data    = "D:\www"
-            logs    = "D:\logs\nginx"
+            install = "tools\nginx\1.30.3"
+            config  = "config\nginx"
+            data    = "www"
+            logs    = "logs\nginx"
         }
 
         port = 80
@@ -39,7 +39,7 @@
         version = "8.2.31"
 
         paths = @{
-            install = "D:\tools\php\8.2.31"
+            install = "tools\php\8.2.31"
         }
     }
 
@@ -48,10 +48,10 @@
         version = "2.4.68"
 
         paths = @{
-            install = "D:\tools\apache\2.4.68"
-            config  = "D:\config\apache"
-            data    = "D:\www"
-            logs    = "D:\logs\apache"
+            install = "tools\apache\2.4.68"
+            config  = "config\apache"
+            data    = "www"
+            logs    = "logs\apache"
         }
 
         port = 81
@@ -69,7 +69,7 @@
         version = "2.10.2"
 
         paths = @{
-            install = "D:\tools\composer"
+            install = "tools\composer"
         }
     }
 
@@ -78,7 +78,7 @@
         version = "2.24"
 
         paths = @{
-            install = "D:\tools\nssm"
+            install = "tools\nssm"
         }
     }
 
@@ -87,7 +87,7 @@
         version = "0.12.3"
 
         paths = @{
-            install = "D:\tools\neovim\0.12.3"
+            install = "tools\neovim\0.12.3"
         }
     }
 }

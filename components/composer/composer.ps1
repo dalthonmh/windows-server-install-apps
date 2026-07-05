@@ -46,7 +46,7 @@ function Install-ComposerComponent {
 
     $paths = Get-Property $cfg 'paths'
     $installP = if ($paths) { Get-Property $paths 'install' } else { $null }
-    if (-not $installP) { $installP = "apps\composer" }
+    if (-not $installP) { $installP = "tools\composer" }
 
     $composerDir = if ($installP -match '^[A-Za-z]:') { $installP } else { Join-Path "$drive\" $installP.TrimStart('\','/') }
 
