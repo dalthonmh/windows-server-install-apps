@@ -23,9 +23,9 @@
         version = "1.30.3"
 
         paths = @{
-            install = "D:\apps\nginx\1.30.3"
+            install = "D:\tools\nginx\1.30.3"
             config  = "D:\config\nginx"
-            data    = "D:\data\nginx"
+            data    = "D:\www"
             logs    = "D:\logs\nginx"
         }
 
@@ -44,7 +44,7 @@
         version = "8.2.31"
 
         paths = @{
-            install = "D:\apps\php\8.2.31"
+            install = "D:\tools\php\8.2.31"
         }
     }
 
@@ -53,9 +53,9 @@
         version = "2.4.68"
 
         paths = @{
-            install = "D:\apps\apache\2.4.68"
+            install = "D:\tools\apache\2.4.68"
             config  = "D:\config\apache"
-            data    = "D:\data\apache"
+            data    = "D:\www"
             logs    = "D:\logs\apache"
         }
 
@@ -74,17 +74,25 @@
         version = "2.10.2"
 
         paths = @{
-            install = "D:\apps\composer"
+            install = "D:\tools\composer"
         }
     }
 
-    # Neovim (recomendado sobre Vim/GVim moderno)
+    nssm = @{
+        enabled = $true
+        version = "2.24"
+
+        paths = @{
+            install = "D:\tools\nssm"
+        }
+    }
+
     neovim = @{
         enabled = $true
         version = "0.12.3"
 
         paths = @{
-            install = "D:\apps\neovim\0.12.3"
+            install = "D:\tools\neovim\0.12.3"
         }
     }
 }

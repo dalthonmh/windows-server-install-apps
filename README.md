@@ -107,20 +107,28 @@ Componentes recomendados:
 - `nssm` para wrappers de servicio (separado de la app).
 - Tu app (nginx, iis, etc.).
 
-## Estructura (modular)
+## Estructura recomendada (modular y escalable)
 
 ```
-.
-├── README.md
-├── config.psd1
-├── deploy.ps1
-├── validate.ps1
-└── components/
-    ├── nssm/
-    │   └── nssm.ps1          # Lógica de NSSM + PATH global
-    └── nginx/
-        ├── nginx.conf        # Plantilla de configuración
-        └── nginx.ps1         # Lógica de Nginx
+D:\
+├── tools\
+├── apps\
+│   ├── catastro\
+│   ├── academico-backend\
+│   ├── academico-estudiante\
+│   ├── academico-academico\
+│   ├── academico-docente\
+│   └── ...
+├── www\
+│   ├── catastro\
+│   ├── academico-estudiante\
+│   ├── academico-academico\
+│   └── ...
+├── config\
+│   └── nginx\
+├── logs\
+├── backups\
+└── deploy\
 ```
 
 ## Paths en el servidor (separación clara)

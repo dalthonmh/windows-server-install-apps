@@ -150,6 +150,10 @@ function Install-NginxComponent {
         }
     }
 
+    # Asegurar que sites-enabled exista para vhosts por cliente/sistema
+    $sitesEnabled = Join-Path $targetConfDir "sites-enabled"
+    New-Item -ItemType Directory -Path $sitesEnabled -Force | Out-Null
+
     # 3. Desplegar configuracion (solo si cambio)
     $tpl = Join-Path $PSScriptRoot "nginx.conf"
     $targetConf = Join-Path (Get-Property $paths 'config') "nginx.conf"
@@ -160,21 +164,28 @@ function Install-NginxComponent {
     $logPRaw     = Get-Property $paths 'logs'
     $dataPRaw    = Get-Property $paths 'data'
     $installPRaw = Get-Property $paths 'install'
+    $configPRaw  = Get-Property $paths 'config'
     $portV       = Get-Property $cfg 'port'
 
     # Usar rutas absolutas (ya normalizadas arriba). Forzar backslashes para claridad
     $logP     = if ($logPRaw)     { ([string]$logPRaw).TrimEnd('\','/').Replace('/','\') } else { 'logs' }
     $dataP    = if ($dataPRaw)    { ([string]$dataPRaw).TrimEnd('\','/').Replace('/','\') } else { 'data' }
     $installP = if ($installPRaw) { ([string]$installPRaw).TrimEnd('\','/').Replace('/','\') } else { '' }
+    $configP  = if ($configPRaw)  { ([string]$configPRaw).TrimEnd('\','/').Replace('/','\') } else { 'D:\config\nginx' }
 
     # Asegurar que existan las carpetas necesarias (config + logs custom)
     try { New-Item -ItemType Directory -Path $logPRaw -Force | Out-Null } catch { }
     try { New-Item -ItemType Directory -Path (Split-Path $targetConf -Parent) -Force | Out-Null } catch { }
 
+    # Crear sites-enabled para vhosts por cliente/sistema
+    $sitesEnabled = Join-Path $configP "sites-enabled"
+    New-Item -ItemType Directory -Path $sitesEnabled -Force | Out-Null
+
     # Reemplazos con String.Replace usando rutas Windows (backslashes)
     $content = $content.Replace('{{logPath}}', $logP)
     $content = $content.Replace('{{dataPath}}', $dataP)
     $content = $content.Replace('{{installPath}}', $installP)
+    $content = $content.Replace('{{configPath}}', $configP)
     $content = $content.Replace('{{port}}', [string]$portV)
 
     # Normalizar todas las rutas generadas a usar / (estilo recomendado para nginx, funciona perfecto en Windows)
