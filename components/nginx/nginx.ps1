@@ -119,6 +119,14 @@ function Install-NginxComponent {
 
     $exe = Join-Path $installDir "nginx.exe"
 
+    # Si el directorio de instalación existe pero le faltan archivos críticos
+    # (puede pasar si se borró mal un symlink anterior), forzamos re-extracción.
+    $criticalFile = Join-Path $installDir "conf\mime.types"
+    if ((Test-Path $installDir) -and -not (Test-Path $criticalFile)) {
+        Write-Host "[nginx] Install directory looks incomplete (missing mime.types). Forcing re-extract..." -ForegroundColor Yellow
+        Remove-Item $exe -Force -ErrorAction SilentlyContinue
+    }
+
     # 1. Descargar usando caché compartida (solo una vez por versión)
     $zip = Get-CachedDownload -Url $url -CacheDir $cache -FileName "nginx-$ver.zip" -Label "[nginx]"
 
@@ -155,8 +163,20 @@ function Install-NginxComponent {
     }
 
     # Crear/actualizar symlink 'nginx-current' (después de extraer para que el target exista)
+    # Eliminar el symlink de forma segura sin seguirlo ni pedir confirmación
     if (Test-Path $currentLink) {
-        Remove-Item $currentLink -Force -ErrorAction SilentlyContinue
+        try {
+            $linkItem = Get-Item -LiteralPath $currentLink -Force -ErrorAction Stop
+            if ($linkItem.Attributes -band [System.IO.FileAttributes]::ReparsePoint) {
+                # Borra solo el reparse point (symlink), no el contenido del target
+                $linkItem.Delete()
+            } else {
+                Remove-Item -LiteralPath $currentLink -Force -Recurse -ErrorAction SilentlyContinue
+            }
+        } catch {
+            # Fallback usando cmd (muy confiable para symlinks de directorio)
+            cmd /c "rmdir `"$currentLink`" " 2>$null | Out-Null
+        }
     }
     try {
         New-Item -ItemType SymbolicLink -Path $currentLink -Target $installDir -Force | Out-Null
@@ -178,10 +198,9 @@ function Install-NginxComponent {
     # Asegurar que el config dir y sites-enabled existen
     New-Item -ItemType Directory -Path $configDir, $sitesEnabled -Force | Out-Null
 
-    # Crear un default site básico la primera vez (para que nginx responda algo usable)
+    # Asegurar default site con las rutas actuales (lo regeneramos si es necesario)
     $defaultSite = Join-Path $sitesEnabled "default.conf"
-    if (-not (Test-Path $defaultSite)) {
-        $siteContent = @"
+    $desiredDefault = @"
 server {
     listen       {{port}};
     server_name  localhost;
@@ -195,10 +214,19 @@ server {
     # root D:/www/mi-sitio;
 }
 "@ -replace '{{port}}', $portV -replace '{{currentPath}}', $currentP
-        # Normalizar a / para nginx
-        $siteContent = $siteContent -replace '([A-Za-z]):\\', '$1:/' -replace '\\+', '/'
-        $siteContent | Out-File -FilePath $defaultSite -Encoding UTF8 -Force
-        Write-Host "[nginx] Created basic default site in $defaultSite (edit/replace as needed)." -ForegroundColor Yellow
+    $desiredDefault = $desiredDefault -replace '([A-Za-z]):\\', '$1:/' -replace '\\+', '/'
+
+    $needsDefaultUpdate = $true
+    if (Test-Path $defaultSite) {
+        $existingDefault = Get-Content $defaultSite -Raw -Encoding UTF8
+        if ($existingDefault.Trim() -eq $desiredDefault.Trim()) {
+            $needsDefaultUpdate = $false
+        }
+    }
+
+    if ($needsDefaultUpdate) {
+        $desiredDefault | Out-File -FilePath $defaultSite -Encoding UTF8 -Force
+        Write-Host "[nginx] Updated default site in $defaultSite" -ForegroundColor Green
     }
 
     # 3. Desplegar la configuración principal en la ruta persistente (config), NO dentro del install versionado
@@ -256,19 +284,22 @@ server {
     }
     Push-Location -Path $testDir
     $exitCode = 0
+    $testOutput = $null
     try {
-        $testOutput = & {
-            $ErrorActionPreference = 'SilentlyContinue'
-            & $testExe -t -c $targetConf 2>&1
-        }
+        # Ejecutamos nginx -t y capturamos toda la salida (incluyendo stderr)
+        $testOutput = & $testExe -t -c $targetConf 2>&1
         $exitCode = $LASTEXITCODE
     } finally {
         Pop-Location
     }
 
+    if ($testOutput) {
+        Write-Host "[nginx] nginx -t output:" -ForegroundColor DarkGray
+        Write-Host ($testOutput | Out-String).Trim() -ForegroundColor DarkGray
+    }
+
     if ($exitCode -ne 0) {
         Write-Host "[nginx] Configuration error:" -ForegroundColor Red
-        Write-Host ($testOutput | Out-String) -ForegroundColor Red
         throw "[nginx] The configuration has errors (see above)"
     }
 
