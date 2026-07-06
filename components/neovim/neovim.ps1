@@ -149,4 +149,48 @@ function Test-NeovimComponent {
     }
 }
 
+function Uninstall-NeovimComponent {
+    param(
+        $cfg,
+        $serverCfg,
+        $downloads,
+        [switch]$WhatIf,
+        [switch]$Force,
+        [switch]$RemoveConfig,
+        [switch]$RemoveLogs,
+        [switch]$RemoveData
+    )
+
+    $drv = $serverCfg
+    $drive = if ($drv -and (Get-Property $drv 'drive')) { Get-Property $drv 'drive' } else { "D:" }
+
+    $paths = Get-Property $cfg 'paths'
+    $installP = if ($paths) { Get-Property $paths 'install' } else { $null }
+    if (-not $installP) { $installP = "tools\neovim" }
+
+    $installDir = if ($installP -match '^[A-Za-z]:') { $installP } else { Join-Path "$drive\" ($installP.TrimStart('\','/')) }
+
+    Write-Host "[neovim] Uninstalling Neovim..." -ForegroundColor Cyan
+
+    if (-not $WhatIf) {
+        Remove-FromSystemPath -PathToRemove $installDir
+    } else {
+        Write-Host "[neovim] WhatIf: Would remove from PATH: $installDir" -ForegroundColor Yellow
+    }
+
+    if (Test-Path $installDir) {
+        if ($WhatIf) {
+            Write-Host "[neovim] WhatIf: Would remove $installDir" -ForegroundColor Yellow
+        } else {
+            $resp = Read-Host "Remove Neovim directory $installDir ? (y/N)"
+            if ($Force -or $resp -eq 'y') {
+                Remove-Item $installDir -Recurse -Force -ErrorAction SilentlyContinue
+                Write-Host "[neovim] Removed: $installDir" -ForegroundColor Green
+            }
+        }
+    }
+
+    Write-Host "[neovim] Uninstall finished." -ForegroundColor Green
+}
+
 # Nota: Se usa dot-sourcing desde deploy.ps1

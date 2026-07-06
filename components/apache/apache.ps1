@@ -266,4 +266,90 @@ function Show-ApacheNssmConfig {
     Write-Host "AppStderr:     $(nssm get $svcName AppStderr 2>$null)"
 }
 
+function Uninstall-ApacheComponent {
+    param(
+        $cfg,
+        $serverCfg,
+        $downloads,
+        [switch]$WhatIf,
+        [switch]$Force,
+        [switch]$RemoveConfig,
+        [switch]$RemoveLogs,
+        [switch]$RemoveData
+    )
+
+    $drv = $serverCfg
+    $drive = if ($drv -and (Get-Property $drv 'drive')) { Get-Property $drv 'drive' } else { "D:" }
+
+    $ver = Get-Property $cfg 'version'
+    if (-not $ver) { $ver = "2.4.68" }
+
+    $paths = Get-Property $cfg 'paths'
+    function Get-AbsPath([string]$val, [string]$name, [string]$d, [string]$version) {
+        $base = if ($d -match '^[A-Za-z]') { ($d -replace '[:\\/]+$', '') + ':' } else { 'D:' }
+        if ($val -and ($val -match '^[A-Za-z]:')) { return ([string]$val).TrimEnd('\','/') }
+        if (-not $val -or [string]::IsNullOrWhiteSpace($val)) {
+            switch ($name) {
+                'install' { $val = if ($version) { "tools\apache\$version" } else { 'tools\apache' } }
+                'logs'    { $val = 'logs\apache' }
+            }
+        }
+        $clean = $val.TrimStart('\','/').Replace('/', '\')
+        return (Join-Path $base $clean)
+    }
+
+    $installDir = Get-AbsPath (Get-Property $paths 'install') 'install' $drive $ver
+    $logsDir    = Get-AbsPath (Get-Property $paths 'logs')    'logs'    $drive $ver
+
+    $apacheBase   = Split-Path $installDir -Parent
+    $currentLink  = Join-Path $apacheBase "apache-current"
+
+    $svcName = Get-Property (Get-Property $cfg 'service') 'name'
+    if (-not $svcName) { $svcName = "apache" }
+
+    $nssm = "$drive\tools\nssm\nssm.exe"
+
+    Write-Host "[apache] Uninstalling version $ver..." -ForegroundColor Cyan
+
+    # 1. Stop + remove service
+    Stop-And-Remove-Service -ServiceName $svcName -NssmPath $nssm
+
+    # 2. Remove symlink
+    if (-not $WhatIf) {
+        Remove-SymlinkIfExists -Path $currentLink
+    } else {
+        Write-Host "[apache] WhatIf: Would remove symlink $currentLink" -ForegroundColor Yellow
+    }
+
+    # 3. Remove install dir
+    if (Test-Path $installDir) {
+        if ($WhatIf) {
+            Write-Host "[apache] WhatIf: Would remove $installDir" -ForegroundColor Yellow
+        } else {
+            $resp = Read-Host "Remove Apache install dir $installDir ? (y/N)"
+            if ($Force -or $resp -eq 'y') {
+                Remove-Item $installDir -Recurse -Force -ErrorAction SilentlyContinue
+                Write-Host "[apache] Removed: $installDir" -ForegroundColor Green
+            }
+        }
+    }
+
+    # 4. Logs (optional)
+    if ($RemoveLogs -and (Test-Path $logsDir)) {
+        if ($WhatIf) {
+            Write-Host "[apache] WhatIf: Would remove logs $logsDir" -ForegroundColor Yellow
+        } else {
+            $resp = Read-Host "Remove logs $logsDir ? (y/N)"
+            if ($Force -or $resp -eq 'y') {
+                Remove-Item $logsDir -Recurse -Force -ErrorAction SilentlyContinue
+                Write-Host "[apache] Removed logs: $logsDir" -ForegroundColor Green
+            }
+        }
+    } elseif (Test-Path $logsDir) {
+        Write-Host "[apache] Keeping logs: $logsDir" -ForegroundColor DarkGray
+    }
+
+    Write-Host "[apache] Uninstall finished." -ForegroundColor Green
+}
+
 # Nota: dot-sourced desde deploy.ps1

@@ -147,4 +147,48 @@ function Test-ComposerComponent {
     }
 }
 
+function Uninstall-ComposerComponent {
+    param(
+        $cfg,
+        $serverCfg,
+        $downloads,
+        [switch]$WhatIf,
+        [switch]$Force,
+        [switch]$RemoveConfig,
+        [switch]$RemoveLogs,
+        [switch]$RemoveData
+    )
+
+    $drv = $serverCfg
+    $drive = if ($drv -and (Get-Property $drv 'drive')) { Get-Property $drv 'drive' } else { "D:" }
+
+    $paths = Get-Property $cfg 'paths'
+    $installP = if ($paths) { Get-Property $paths 'install' } else { $null }
+    if (-not $installP) { $installP = "tools\composer" }
+
+    $composerDir = if ($installP -match '^[A-Za-z]:') { $installP } else { Join-Path "$drive\" ($installP.TrimStart('\','/')) }
+
+    Write-Host "[composer] Uninstalling Composer..." -ForegroundColor Cyan
+
+    if (-not $WhatIf) {
+        Remove-FromSystemPath -PathToRemove $composerDir
+    } else {
+        Write-Host "[composer] WhatIf: Would remove from PATH: $composerDir" -ForegroundColor Yellow
+    }
+
+    if (Test-Path $composerDir) {
+        if ($WhatIf) {
+            Write-Host "[composer] WhatIf: Would remove $composerDir" -ForegroundColor Yellow
+        } else {
+            $resp = Read-Host "Remove Composer directory $composerDir ? (y/N)"
+            if ($Force -or $resp -eq 'y') {
+                Remove-Item $composerDir -Recurse -Force -ErrorAction SilentlyContinue
+                Write-Host "[composer] Removed: $composerDir" -ForegroundColor Green
+            }
+        }
+    }
+
+    Write-Host "[composer] Uninstall finished." -ForegroundColor Green
+}
+
 # Nota: dot-sourced desde deploy.ps1, no es necesario Export-ModuleMember

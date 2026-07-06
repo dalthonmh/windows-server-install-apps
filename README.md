@@ -77,6 +77,28 @@ Eso es todo. El script es **idempotente**: puedes correrlo muchas veces. Solo ha
 .\validate.ps1
 ```
 
+## Desinstalar
+
+```powershell
+# Desinstalar todo lo que está habilitado en config.psd1 (seguro por defecto)
+.\uninstall.ps1
+
+# Solo algunos componentes
+.\uninstall.ps1 -Component nginx,php
+
+# Dry-run (ver qué haría sin tocar nada)
+.\uninstall.ps1 -WhatIf
+
+# Forzar sin preguntar + borrar también config y logs (¡cuidado!)
+.\uninstall.ps1 -Force -RemoveConfig -RemoveLogs
+```
+
+**Por defecto el desinstalador:**
+- Mantiene tus carpetas de `config\`, `logs\` y `data\` (lo más seguro).
+- Para borrarlas usa los switches `-RemoveConfig`, `-RemoveLogs`, `-RemoveData`.
+
+Se recomienda correr PowerShell **como Administrador**.
+
 ## Agregar un nuevo servicio
 
 1. Agrega el bloque en `config.psd1` (usa `downloads.base` cuando sea posible):

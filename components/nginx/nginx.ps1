@@ -346,4 +346,107 @@ function Test-NginxComponent {
     Write-Host "Uso recomendado: <drive>\tools\nginx\nginx-current\nginx.exe -c <drive>\config\nginx\nginx.conf"
 }
 
+function Uninstall-NginxComponent {
+    param(
+        $cfg,
+        $serverCfg,
+        $downloads,
+        [switch]$WhatIf,
+        [switch]$Force,
+        [switch]$RemoveConfig,
+        [switch]$RemoveLogs,
+        [switch]$RemoveData
+    )
+
+    $drv = $serverCfg
+    $drive = if ($drv -and (Get-Property $drv 'drive')) { Get-Property $drv 'drive' } else { "D:" }
+
+    $ver = Get-Property $cfg 'version'
+    if (-not $ver) { $ver = "1.30.3" }
+
+    $paths = Get-Property $cfg 'paths'
+    function Get-AbsPath([string]$val, [string]$name, [string]$d, [string]$version) {
+        $base = if ($d -match '^[A-Za-z]') { ($d -replace '[:\\/]+$', '') + ':' } else { 'D:' }
+        if ($val -and ($val -match '^[A-Za-z]:')) { return ([string]$val).TrimEnd('\','/') }
+        if (-not $val -or [string]::IsNullOrWhiteSpace($val)) {
+            switch ($name) {
+                'install' { $val = if ($version) { "tools\nginx\$version" } else { 'tools\nginx' } }
+                'config'  { $val = 'config\nginx' }
+                'logs'    { $val = 'logs\nginx' }
+            }
+        }
+        $clean = $val.TrimStart('\','/').Replace('/', '\')
+        return (Join-Path $base $clean)
+    }
+
+    $installDir = Get-AbsPath (Get-Property $paths 'install') 'install' $drive $ver
+    $configDir  = Get-AbsPath (Get-Property $paths 'config')  'config'  $drive $ver
+    $logsDir    = Get-AbsPath (Get-Property $paths 'logs')    'logs'    $drive $ver
+
+    $nginxBase   = Split-Path $installDir -Parent
+    $currentLink = Join-Path $nginxBase "nginx-current"
+
+    $svcName = Get-Property (Get-Property $cfg 'service') 'name'
+    if (-not $svcName) { $svcName = "nginx" }
+
+    $nssm = "$drive\tools\nssm\nssm.exe"
+
+    Write-Host "[nginx] Uninstalling version $ver..." -ForegroundColor Cyan
+
+    # 1. Stop and remove service
+    Stop-And-Remove-Service -ServiceName $svcName -NssmPath $nssm
+
+    # 2. Remove symlink
+    if (-not $WhatIf) {
+        Remove-SymlinkIfExists -Path $currentLink
+    } else {
+        Write-Host "[nginx] WhatIf: Would remove symlink $currentLink" -ForegroundColor Yellow
+    }
+
+    # 3. Remove installed version directory
+    if (Test-Path $installDir) {
+        if ($WhatIf) {
+            Write-Host "[nginx] WhatIf: Would remove $installDir" -ForegroundColor Yellow
+        } else {
+            $resp = Read-Host "Remove Nginx install dir $installDir ? (y/N)"
+            if ($Force -or $resp -eq 'y') {
+                Remove-Item $installDir -Recurse -Force -ErrorAction SilentlyContinue
+                Write-Host "[nginx] Removed: $installDir" -ForegroundColor Green
+            }
+        }
+    }
+
+    # 4. Remove persistent config (only if explicitly requested)
+    if ($RemoveConfig -and (Test-Path $configDir)) {
+        if ($WhatIf) {
+            Write-Host "[nginx] WhatIf: Would remove CONFIG $configDir" -ForegroundColor Yellow
+        } else {
+            $resp = Read-Host "DANGER: Remove config directory $configDir ? (y/N)"
+            if ($Force -or $resp -eq 'y') {
+                Remove-Item $configDir -Recurse -Force -ErrorAction SilentlyContinue
+                Write-Host "[nginx] Removed CONFIG: $configDir" -ForegroundColor Red
+            }
+        }
+    } elseif (Test-Path $configDir) {
+        Write-Host "[nginx] Keeping config (use -RemoveConfig to delete): $configDir" -ForegroundColor DarkGray
+    }
+
+    # 5. Remove logs (only if requested)
+    if ($RemoveLogs -and (Test-Path $logsDir)) {
+        if ($WhatIf) {
+            Write-Host "[nginx] WhatIf: Would remove logs $logsDir" -ForegroundColor Yellow
+        } else {
+            $resp = Read-Host "Remove logs $logsDir ? (y/N)"
+            if ($Force -or $resp -eq 'y') {
+                Remove-Item $logsDir -Recurse -Force -ErrorAction SilentlyContinue
+                Write-Host "[nginx] Removed logs: $logsDir" -ForegroundColor Green
+            }
+        }
+    } elseif (Test-Path $logsDir) {
+        Write-Host "[nginx] Keeping logs: $logsDir" -ForegroundColor DarkGray
+    }
+
+    Write-Host "[nginx] Uninstall finished for Nginx." -ForegroundColor Green
+}
+
 # Note: dot-sourced from deploy.ps1, Export-ModuleMember not needed

@@ -169,4 +169,64 @@ function Test-PhpComponent {
     }
 }
 
+function Uninstall-PhpComponent {
+    param(
+        $cfg,
+        $serverCfg,
+        $downloads,
+        [switch]$WhatIf,
+        [switch]$Force,
+        [switch]$RemoveConfig,
+        [switch]$RemoveLogs,
+        [switch]$RemoveData
+    )
+
+    $drv = $serverCfg
+    $drive = if ($drv -and (Get-Property $drv 'drive')) { Get-Property $drv 'drive' } else { "D:" }
+
+    $ver = Get-Property $cfg 'version'
+    if (-not $ver) { $ver = "8.2.31" }
+
+    $paths = Get-Property $cfg 'paths'
+    function Get-AbsPath([string]$val, [string]$name, [string]$d, [string]$version) {
+        $base = if ($d -match '^[A-Za-z]') { ($d -replace '[:\\/]+$', '') + ':' } else { 'D:' }
+        if ($val -and ($val -match '^[A-Za-z]:')) { return ([string]$val).TrimEnd('\','/') }
+        if (-not $val -or [string]::IsNullOrWhiteSpace($val)) {
+            switch ($name) {
+                'install' { $val = if ($version) { "tools\php\$version" } else { 'tools\php' } }
+            }
+        }
+        $clean = $val.TrimStart('\','/').Replace('/', '\')
+        return (Join-Path $base $clean)
+    }
+
+    $installDir = Get-AbsPath (Get-Property $paths 'install') 'install' $drive $ver
+
+    Write-Host "[php] Uninstalling PHP $ver..." -ForegroundColor Cyan
+
+    # 1. Remove from PATH
+    if (-not $WhatIf) {
+        Remove-FromSystemPath -PathToRemove $installDir
+    } else {
+        Write-Host "[php] WhatIf: Would remove PHP from PATH: $installDir" -ForegroundColor Yellow
+    }
+
+    # 2. Remove install directory
+    if (Test-Path $installDir) {
+        if ($WhatIf) {
+            Write-Host "[php] WhatIf: Would remove $installDir" -ForegroundColor Yellow
+        } else {
+            $resp = Read-Host "Remove PHP install dir $installDir ? (y/N)"
+            if ($Force -or $resp -eq 'y') {
+                Remove-Item $installDir -Recurse -Force -ErrorAction SilentlyContinue
+                Write-Host "[php] Removed: $installDir" -ForegroundColor Green
+            }
+        }
+    }
+
+    # Note: We do NOT remove php.ini or user data unless user deletes the folder manually.
+
+    Write-Host "[php] Uninstall finished for PHP." -ForegroundColor Green
+}
+
 # Nota: dot-sourced desde deploy.ps1

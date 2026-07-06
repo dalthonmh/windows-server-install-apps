@@ -126,4 +126,53 @@ function Test-NssmComponent {
     }
 }
 
+function Uninstall-NssmComponent {
+    param(
+        $cfg,
+        $serverCfg,
+        $downloads,
+        [switch]$WhatIf,
+        [switch]$Force,
+        [switch]$RemoveConfig,
+        [switch]$RemoveLogs,
+        [switch]$RemoveData
+    )
+
+    $drv = $serverCfg
+    $drive = if ($drv -and (Get-Property $drv 'drive')) { Get-Property $drv 'drive' } else { "D:" }
+
+    $paths = Get-Property $cfg 'paths'
+    $installP = if ($paths) { Get-Property $paths 'install' } else { $null }
+    if ($installP -and ($installP -match '^[A-Za-z]:')) {
+        $nssmDir = $installP
+    } elseif ($installP) {
+        $nssmDir = Join-Path "$drive\" ($installP.TrimStart('\','/').Replace('/','\'))
+    } else {
+        $nssmDir = "$drive\tools\nssm"
+    }
+
+    Write-Host "[nssm] Uninstalling NSSM..." -ForegroundColor Cyan
+
+    # Remove from PATH
+    if (-not $WhatIf) {
+        Remove-FromSystemPath -PathToRemove $nssmDir
+    } else {
+        Write-Host "[nssm] WhatIf: Would remove from PATH: $nssmDir" -ForegroundColor Yellow
+    }
+
+    if (Test-Path $nssmDir) {
+        if ($WhatIf) {
+            Write-Host "[nssm] WhatIf: Would remove $nssmDir" -ForegroundColor Yellow
+        } else {
+            $resp = Read-Host "Remove NSSM directory $nssmDir ? (y/N)"
+            if ($Force -or $resp -eq 'y') {
+                Remove-Item $nssmDir -Recurse -Force -ErrorAction SilentlyContinue
+                Write-Host "[nssm] Removed: $nssmDir" -ForegroundColor Green
+            }
+        }
+    }
+
+    Write-Host "[nssm] Uninstall finished." -ForegroundColor Green
+}
+
 # Note: dot-sourced from deploy.ps1
