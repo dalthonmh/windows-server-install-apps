@@ -34,9 +34,13 @@ function Install-NginxComponent {
     }
 
     $drv = $serverCfg
-    $drive = if ($drv -and (Get-Property $drv 'drive')) { Get-Property $drv 'drive' } 
-             elseif ($drv -and (Get-Property $drv 'appDrive')) { Get-Property $drv 'appDrive' } 
-             else { "D:" }
+    if ($drv -and (Get-Property $drv 'drive')) {
+        $drive = Get-Property $drv 'drive'
+    } elseif ($drv -and (Get-Property $drv 'appDrive')) {
+        $drive = Get-Property $drv 'appDrive'
+    } else {
+        $drive = "D:"
+    }
 
     $ver = Get-Property $cfg 'version'
     if (-not $ver) { $ver = "1.30.3" }
@@ -161,7 +165,11 @@ function Install-NginxComponent {
         Write-Host "[nginx] No se pudo crear symlink (requiere Admin o Developer Mode activado). Usa la ruta versionada." -ForegroundColor Yellow
     }
 
-    $logP     = if ($logsDir)  { ([string]$logsDir).TrimEnd('\','/').Replace('/','\') } else { 'logs' }
+    if ($logsDir) {
+        $logP = ([string]$logsDir).TrimEnd('\','/').Replace('/','\')
+    } else {
+        $logP = 'logs'
+    }
 
     # Usamos el symlink como referencia estable para binarios y archivos estáticos (mime.types, etc.)
     $currentP = ([string]$currentLink).TrimEnd('\','/').Replace('/','\')
@@ -236,8 +244,18 @@ server {
 
     # Probar sintaxis usando el symlink 'current' cuando sea posible (facilita que funcione con config externa)
     # Ejecutamos desde el directorio del current link.
-    $testExe = if (Test-Path $currentLink) { Join-Path $currentLink "nginx.exe" } else { $exe }
-    Push-Location -Path (if (Test-Path $currentLink) { $currentLink } else { $installDir })
+    if (Test-Path $currentLink) {
+        $testExe = Join-Path $currentLink "nginx.exe"
+    } else {
+        $testExe = $exe
+    }
+    if (Test-Path $currentLink) {
+        $testDir = $currentLink
+    } else {
+        $testDir = $installDir
+    }
+    Push-Location -Path $testDir
+    $exitCode = 0
     try {
         $testOutput = & {
             $ErrorActionPreference = 'SilentlyContinue'
@@ -265,7 +283,11 @@ server {
     $hasNssm = (Test-Path $nssm) -and ($useNssm -ne $false)
 
     # Usar el symlink para el ejecutable (si existe)
-    $serviceExe = if (Test-Path $currentLink) { Join-Path $currentLink "nginx.exe" } else { $exe }
+    if (Test-Path $currentLink) {
+        $serviceExe = Join-Path $currentLink "nginx.exe"
+    } else {
+        $serviceExe = $exe
+    }
 
     if ($hasNssm) {
         # Usamos NSSM (debe haber sido instalado por el componente nssm separado)
@@ -341,7 +363,11 @@ function Test-NginxComponent {
 
     # Mostrar rutas útiles (current + config)
     $paths = Get-Property $cfg 'paths'
-    $installGuess = if ($paths -and $paths.install) { $paths.install } else { "tools\nginx\*" }
+    if ($paths -and $paths.install) {
+        $installGuess = $paths.install
+    } else {
+        $installGuess = "tools\nginx\*"
+    }
     Write-Host "Nginx install (versioned): $drive\$installGuess"
     Write-Host "Uso recomendado: <drive>\tools\nginx\nginx-current\nginx.exe -c <drive>\config\nginx\nginx.conf"
 }
