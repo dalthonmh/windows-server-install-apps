@@ -28,6 +28,7 @@
 
         paths = @{
             install = "tools\nginx\1.30.3"
+            config  = "config\nginx"
             logs    = "tools\logs\nginx"
         }
 

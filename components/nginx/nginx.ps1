@@ -41,6 +41,9 @@ function Install-NginxComponent {
     $ver = Get-Property $cfg 'version'
     if (-not $ver) { $ver = "1.30.3" }
 
+    $portV = Get-Property $cfg 'port'
+    if (-not $portV) { $portV = 80 }
+
     # Base de descargas (estaticos)
     $base = $null
     if ($downloads) { $base = Get-Property $downloads 'base' }
@@ -59,6 +62,8 @@ function Install-NginxComponent {
         if (-not $val -or [string]::IsNullOrWhiteSpace($val)) {
             switch ($name) {
                 'install' { $val = if ($version) { "tools\nginx\$version" } else { 'tools\nginx' } }
+                'config'  { $val = 'config\nginx' }
+                'data'    { $val = 'data\nginx' }
                 'logs'    { $val = 'logs\nginx' }
             }
         }
@@ -73,6 +78,8 @@ function Install-NginxComponent {
 
     $paths = @{
         install = Get-AbsPath $installP 'install' $drive $ver
+        config  = Get-AbsPath $configP  'config'  $drive $ver
+        data    = Get-AbsPath $dataP    'data'    $drive $ver
         logs    = Get-AbsPath $logsP    'logs'    $drive $ver
     }
 
@@ -82,18 +89,31 @@ function Install-NginxComponent {
     # Esto evita la mayoria de errores "no se puede encontrar la ruta/archivo" (como mime.types, logs, etc.)
     # durante la prueba de configuracion o al arrancar el servicio.
     $installDir = Get-Property $paths 'install'
+    $configDir  = Get-Property $paths 'config'
+    $dataDir    = Get-Property $paths 'data'
+    $logsDir    = Get-Property $paths 'logs'
+
+    # Symlink 'nginx-current' para facilitar upgrades y referencias sin hardcodear versión
+    $nginxBase   = Split-Path $installDir -Parent
+    $currentLink = Join-Path $nginxBase "nginx-current"
+
     $dirsToCreate = @(
         $cache,
         $installDir,
         (Join-Path $installDir 'conf'),
-        (Join-Path $installDir 'logs')
+        (Join-Path $installDir 'logs'),
+        $configDir,
+        $logsDir
     )
     New-Item -ItemType Directory -Path $dirsToCreate -Force | Out-Null
 
+    # Crear carpeta sites-enabled dentro del config persistente
+    $sitesEnabled = Join-Path $configDir "sites-enabled"
+    New-Item -ItemType Directory -Path $sitesEnabled -Force | Out-Null
+
     # No creamos www, los frontends se despliegan por sus propios deploy.ps1 a la ubicacion por defecto (D:\www o tools\www segun estructura)
 
-
-    $exe = Join-Path (Get-Property $paths 'install') "nginx.exe"
+    $exe = Join-Path $installDir "nginx.exe"
 
     # 1. Descargar usando caché compartida (solo una vez por versión)
     $zip = Get-CachedDownload -Url $url -CacheDir $cache -FileName "nginx-$ver.zip" -Label "[nginx]"
@@ -130,35 +150,66 @@ function Install-NginxComponent {
         }
     }
 
-    $logPRaw     = Get-Property $paths 'logs'
-    $installPRaw = Get-Property $paths 'install'
-    $portV       = Get-Property $cfg 'port'
+    # Crear/actualizar symlink 'nginx-current' (después de extraer para que el target exista)
+    if (Test-Path $currentLink) {
+        Remove-Item $currentLink -Force -ErrorAction SilentlyContinue
+    }
+    try {
+        New-Item -ItemType SymbolicLink -Path $currentLink -Target $installDir -Force | Out-Null
+        Write-Host "[nginx] Symlink actualizado: tools/nginx-current -> $ver" -ForegroundColor Green
+    } catch {
+        Write-Host "[nginx] No se pudo crear symlink (requiere Admin o Developer Mode activado). Usa la ruta versionada." -ForegroundColor Yellow
+    }
 
-    # Usar rutas absolutas
-    $logP     = if ($logPRaw)     { ([string]$logPRaw).TrimEnd('\','/').Replace('/','\') } else { 'logs' }
-    $installP = if ($installPRaw) { ([string]$installPRaw).TrimEnd('\','/').Replace('/','\') } else { '' }
+    $logP     = if ($logsDir)  { ([string]$logsDir).TrimEnd('\','/').Replace('/','\') } else { 'logs' }
 
-    # Asegurar carpetas internas del install
-    try { New-Item -ItemType Directory -Path $logPRaw -Force | Out-Null } catch { }
-    $internalConfDir = Join-Path $installP "conf"
-    try { New-Item -ItemType Directory -Path $internalConfDir -Force | Out-Null } catch { }
+    # Usamos el symlink como referencia estable para binarios y archivos estáticos (mime.types, etc.)
+    $currentP = ([string]$currentLink).TrimEnd('\','/').Replace('/','\')
+    $configP  = ([string]$configDir).TrimEnd('\','/').Replace('/','\')
 
-    # 3. Desplegar configuracion en la ubicacion por defecto dentro del install (conf/nginx.conf)
+    # Asegurar que el config dir y sites-enabled existen
+    New-Item -ItemType Directory -Path $configDir, $sitesEnabled -Force | Out-Null
+
+    # Crear un default site básico la primera vez (para que nginx responda algo usable)
+    $defaultSite = Join-Path $sitesEnabled "default.conf"
+    if (-not (Test-Path $defaultSite)) {
+        $siteContent = @"
+server {
+    listen       {{port}};
+    server_name  localhost;
+
+    location / {
+        root   {{currentPath}}/html;
+        index  index.html index.htm;
+    }
+
+    # Agrega tus propios archivos .conf aquí (vhosts por proyecto)
+    # root D:/www/mi-sitio;
+}
+"@ -replace '{{port}}', $portV -replace '{{currentPath}}', $currentP
+        # Normalizar a / para nginx
+        $siteContent = $siteContent -replace '([A-Za-z]):\\', '$1:/' -replace '\\+', '/'
+        $siteContent | Out-File -FilePath $defaultSite -Encoding UTF8 -Force
+        Write-Host "[nginx] Created basic default site in $defaultSite (edit/replace as needed)." -ForegroundColor Yellow
+    }
+
+    # 3. Desplegar la configuración principal en la ruta persistente (config), NO dentro del install versionado
     $tpl = Join-Path $PSScriptRoot "nginx.conf"
-    $targetConf = Join-Path $internalConfDir "nginx.conf"
+    $targetConf = Join-Path $configDir "nginx.conf"
 
     $content = Get-Content $tpl -Raw -Encoding UTF8
     $content = Remove-Utf8Bom $content
 
     $logPInConf = $logP -replace '\\\\','/' -replace '\\','/'
+    Write-Host "[nginx] Usando config: $targetConf" -ForegroundColor DarkGray
     Write-Host "[nginx] logPath in config: $logPInConf" -ForegroundColor DarkGray
 
-    # Reemplazos
+    # Reemplazos usando rutas estables (current + config)
     $content = $content.Replace('{{logPath}}', $logP)
-    $content = $content.Replace('{{installPath}}', $installP)
-    $content = $content.Replace('{{port}}', [string]$portV)
+    $content = $content.Replace('{{currentPath}}', $currentP)
+    $content = $content.Replace('{{configPath}}', $configP)
 
-    # Normalizar rutas a /
+    # Normalizar rutas a / (nginx prefiere forward slashes)
     $content = $content -replace '([A-Za-z]):\\', '$1:/'
     $content = $content -replace '\\+', '/'
 
@@ -177,25 +228,20 @@ function Install-NginxComponent {
         Copy-Item $targetConf "$targetConf.bak" -ErrorAction SilentlyContinue -Force
         $utf8NoBom = New-Object System.Text.UTF8Encoding $false
         [System.IO.File]::WriteAllText($targetConf, $content, $utf8NoBom)
-        Write-Host "[nginx] Configuration updated." -ForegroundColor Green
+        Write-Host "[nginx] Configuration updated at external path." -ForegroundColor Green
     }
 
     # Asegurar logs dir
-    try { New-Item -ItemType Directory -Path $logPRaw -Force | Out-Null } catch { }
+    try { New-Item -ItemType Directory -Path $logsDir -Force | Out-Null } catch { }
 
-    # Probar sintaxis (compatible PS 5.1)
-    # Ejecutamos desde el directorio de nginx.exe para que cualquier ruta relativa se resuelva bien.
-    # nginx escribe los mensajes de "syntax is ok" a stderr incluso en exito.
-    # Usamos un scriptblock con $ErrorActionPreference='SilentlyContinue' local para que
-    # PowerShell (que tiene Stop a nivel global) no convierta esos mensajes en NativeCommandError.
-    $installDir = Get-Property $paths 'install'
-    Push-Location -Path $installDir
+    # Probar sintaxis usando el symlink 'current' cuando sea posible (facilita que funcione con config externa)
+    # Ejecutamos desde el directorio del current link.
+    $testExe = if (Test-Path $currentLink) { Join-Path $currentLink "nginx.exe" } else { $exe }
+    Push-Location -Path (if (Test-Path $currentLink) { $currentLink } else { $installDir })
     try {
-        # Ejecutar en un scriptblock con EA local para que los mensajes de stderr de nginx
-        # (incluso los de exito) no generen ErrorRecords visibles.
         $testOutput = & {
             $ErrorActionPreference = 'SilentlyContinue'
-            & $exe -t -c $targetConf 2>&1
+            & $testExe -t -c $targetConf 2>&1
         }
         $exitCode = $LASTEXITCODE
     } finally {
@@ -211,12 +257,15 @@ function Install-NginxComponent {
     # Feedback limpio cuando pasa (no mostramos el mensaje interno de nginx para no generar ruido)
     Write-Host "[nginx] Configuration syntax: OK" -ForegroundColor Green
 
-    # 4. Servicio
+    # 4. Servicio - preferimos apuntar al symlink para que los upgrades sean más fáciles (cambias el current y reinicias)
     $svcName = Get-Property (Get-Property $cfg 'service') 'name'
     $useNssm = (Get-Property (Get-Property $cfg 'service') 'useNssm')
 
     $nssm = "$drive\tools\nssm\nssm.exe"
     $hasNssm = (Test-Path $nssm) -and ($useNssm -ne $false)
+
+    # Usar el symlink para el ejecutable (si existe)
+    $serviceExe = if (Test-Path $currentLink) { Join-Path $currentLink "nginx.exe" } else { $exe }
 
     if ($hasNssm) {
         # Usamos NSSM (debe haber sido instalado por el componente nssm separado)
@@ -230,27 +279,27 @@ function Install-NginxComponent {
             }
         }
 
-        if ($currentApp -ne $exe) {
+        if ($currentApp -ne $serviceExe) {
             & {
                 $ErrorActionPreference = 'SilentlyContinue'
                 & $nssm stop $svcName 2>&1 | Out-Null
                 & $nssm remove $svcName confirm 2>&1 | Out-Null
-                & $nssm install $svcName $exe "-c `"$targetConf`"" | Out-Null
-                & $nssm set $svcName AppDirectory (Get-Property $paths 'install') | Out-Null
+                & $nssm install $svcName $serviceExe "-c `"$targetConf`"" | Out-Null
+                & $nssm set $svcName AppDirectory $currentLink | Out-Null
                 & $nssm set $svcName DisplayName (Get-Property (Get-Property $cfg 'service') 'displayName') | Out-Null
                 & $nssm set $svcName Start SERVICE_AUTO_START | Out-Null
-                & $nssm set $svcName AppStdout "$drive\logs\nginx\stdout.log" | Out-Null
-                & $nssm set $svcName AppStderr "$drive\logs\nginx\stderr.log" | Out-Null
+                & $nssm set $svcName AppStdout (Join-Path $logsDir "stdout.log") | Out-Null
+                & $nssm set $svcName AppStderr (Join-Path $logsDir "stderr.log") | Out-Null
                 & $nssm set $svcName AppThrottle 1000 | Out-Null
             }
-            Write-Host "[nginx] Service configured with NSSM." -ForegroundColor Green
+            Write-Host "[nginx] Service configured with NSSM (using current symlink)." -ForegroundColor Green
         }
     } else {
         # Fallback sin NSSM (no recomendado para produccion)
         $existing = Get-Service $svcName -ErrorAction SilentlyContinue
         if (-not $existing) {
             New-Service -Name $svcName `
-                        -BinaryPathName "`"$exe`" -c `"$targetConf`"" `
+                        -BinaryPathName "`"$serviceExe`" -c `"$targetConf`"" `
                         -DisplayName (Get-Property (Get-Property $cfg 'service') 'displayName') `
                         -StartupType Automatic | Out-Null
             Write-Host "[nginx] Service registered (without NSSM)." -ForegroundColor Yellow
@@ -263,11 +312,16 @@ function Install-NginxComponent {
         Start-Service $svcName -ErrorAction SilentlyContinue
     }
 
-    Write-Host "[nginx] Ready: $(Get-Property $paths 'install')" -ForegroundColor Green
+    Write-Host "[nginx] Ready: $installDir (current -> $currentLink)" -ForegroundColor Green
+    Write-Host "[nginx] Main config: $targetConf" -ForegroundColor Green
+    Write-Host "[nginx] Usa facilmente: $currentLink\nginx.exe -c $targetConf" -ForegroundColor DarkGray
 }
 
 function Test-NginxComponent {
     param($cfg, $serverCfg, $downloads)
+    $drv = $serverCfg
+    $drive = if ($drv -and (Get-Property $drv 'drive')) { Get-Property $drv 'drive' } else { "D:" }
+
     $svcName = Get-Property (Get-Property $cfg 'service') 'name'
     $port = Get-Property $cfg 'port'
 
@@ -284,6 +338,12 @@ function Test-NginxComponent {
     } catch {
         Write-Host "HTTP port $port : No response or error"
     }
+
+    # Mostrar rutas útiles (current + config)
+    $paths = Get-Property $cfg 'paths'
+    $installGuess = if ($paths -and $paths.install) { $paths.install } else { "tools\nginx\*" }
+    Write-Host "Nginx install (versioned): $drive\$installGuess"
+    Write-Host "Uso recomendado: <drive>\tools\nginx\nginx-current\nginx.exe -c <drive>\config\nginx\nginx.conf"
 }
 
 # Note: dot-sourced from deploy.ps1, Export-ModuleMember not needed

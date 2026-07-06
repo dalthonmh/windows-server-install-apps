@@ -77,7 +77,7 @@ Eso es todo. El script es **idempotente**: puedes correrlo muchas veces. Solo ha
 .\validate.ps1
 ```
 
-## Agregar un nuevo servicio (fácil)
+## Agregar un nuevo servicio
 
 1. Agrega el bloque en `config.psd1` (usa `downloads.base` cuando sea posible):
 
@@ -85,7 +85,7 @@ Eso es todo. El script es **idempotente**: puedes correrlo muchas veces. Solo ha
    apache = @{
        enabled = $true
        version = "2.4"
-       port    = 8080
+       port    = 81
        paths   = @{ ... }
        service = @{ name = "apache"; displayName = "Apache" }
    }
@@ -132,10 +132,16 @@ D:\
 
 ## Paths en el servidor (separación clara)
 
-- App: `D:\apps\nginx\1.30.3`
-- Config: `D:\config\nginx`
-- Data: `D:\data\nginx`
-- Logs: `D:\logs\nginx`
+- App (versionada): `D:\tools\nginx\1.30.3`
+- Current (symlink): `D:\tools\nginx\nginx-current` → apunta a la versión activa
+- Config persistente (fácil de editar y sobrevive upgrades): `D:\config\nginx\nginx.conf` + `sites-enabled\*.conf`
+- Logs: `D:\tools\logs\nginx` (o donde configures)
+
+El symlink `nginx-current` + config externa te permite:
+
+- Actualizar Nginx fácilmente (nueva versión → symlink nuevo → reiniciar)
+- Referenciar siempre la misma ruta: `tools\nginx\current\nginx.exe -c config\nginx\nginx.conf`
+- Mantener tus vhosts en `config\nginx\sites-enabled\` sin que se pierdan en upgrades.
 
 ## Componentes separados (recomendado)
 
