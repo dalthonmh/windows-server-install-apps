@@ -320,25 +320,29 @@ server {
     $exitCode = 0
     $testOutput = $null
     try {
-        # Use cmd to get cleaner output from nginx (avoids "nginx.exe :" wrapper)
-        $testOutput = & cmd /c "`"$testExe`" -t -c `"$targetConf`"" 2>&1
+        # Run inside a scriptblock with SilentlyContinue so that nginx's
+        # success message on stderr ("syntax is ok") does NOT become a
+        # terminating NativeCommandError (because deploy.ps1 has $ErrorActionPreference=Stop).
+        $testOutput = & {
+            $ErrorActionPreference = 'SilentlyContinue'
+            cmd /c "`"$testExe`" -t -c `"$targetConf`"" 2>&1
+        }
         $exitCode = $LASTEXITCODE
     } finally {
         Pop-Location
     }
 
-    if ($testOutput) {
-        Write-Host "[nginx] nginx -t output:" -ForegroundColor DarkGray
-        Write-Host ($testOutput | Out-String).Trim() -ForegroundColor DarkGray
-    }
-
     if ($exitCode -ne 0) {
         Write-Host "[nginx] Configuration error:" -ForegroundColor Red
+        if ($testOutput) {
+            Write-Host ($testOutput | Out-String).Trim() -ForegroundColor Red
+        }
         throw "[nginx] The configuration has errors (see above)"
     }
 
     # Feedback limpio cuando pasa (no mostramos el mensaje interno de nginx para no generar ruido)
     Write-Host "[nginx] Configuration syntax: OK" -ForegroundColor Green
+    # (no imprimimos el "syntax is ok" en cada deploy para no llenar la consola)
 
     # 4. Servicio - preferimos apuntar al symlink para que los upgrades sean más fáciles (cambias el current y reinicias)
     $svcName = Get-Property (Get-Property $cfg 'service') 'name'
