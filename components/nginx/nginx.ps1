@@ -59,8 +59,6 @@ function Install-NginxComponent {
         if (-not $val -or [string]::IsNullOrWhiteSpace($val)) {
             switch ($name) {
                 'install' { $val = if ($version) { "tools\nginx\$version" } else { 'tools\nginx' } }
-                'config'  { $val = 'config\nginx' }
-                'data'    { $val = 'www' }
                 'logs'    { $val = 'logs\nginx' }
             }
         }
@@ -75,8 +73,6 @@ function Install-NginxComponent {
 
     $paths = @{
         install = Get-AbsPath $installP 'install' $drive $ver
-        config  = Get-AbsPath $configP  'config'  $drive $ver
-        data    = Get-AbsPath $dataP    'data'    $drive $ver
         logs    = Get-AbsPath $logsP    'logs'    $drive $ver
     }
 
@@ -89,21 +85,13 @@ function Install-NginxComponent {
     $dirsToCreate = @(
         $cache,
         $installDir,
-        (Get-Property $paths 'config'),
         (Join-Path $installDir 'conf'),
-        (Join-Path $installDir 'logs'),
-        (Get-Property $paths 'data'),
-        (Get-Property $paths 'logs')
+        (Join-Path $installDir 'logs')
     )
     New-Item -ItemType Directory -Path $dirsToCreate -Force | Out-Null
 
-    # Crear carpeta www + index basico si no existe (separacion de datos)
-    $www = Join-Path (Get-Property $paths 'data') "www"
-    New-Item -ItemType Directory -Path $www -Force | Out-Null
-    $index = Join-Path $www "index.html"
-    if (-not (Test-Path $index)) {
-        '<em>Thank you for using nginx.</em>' | Out-File $index -Encoding utf8
-    }
+    # No creamos www, los frontends se despliegan por sus propios deploy.ps1 a la ubicacion por defecto (D:\www o tools\www segun estructura)
+
 
     $exe = Join-Path (Get-Property $paths 'install') "nginx.exe"
 
@@ -142,63 +130,38 @@ function Install-NginxComponent {
         }
     }
 
-    # Asegurar archivos de soporte (mime.types y similares) en la carpeta de config
-    # (util cuando se separa config de la instalacion de nginx)
-    $installConfDir = Join-Path (Get-Property $paths 'install') 'conf'
-    $targetConfDir  = Get-Property $paths 'config'
-    if (Test-Path $installConfDir) {
-        $supportFiles = @('mime.types', 'fastcgi_params', 'uwsgi_params', 'scgi_params')
-        foreach ($f in $supportFiles) {
-            $src = Join-Path $installConfDir $f
-            if (Test-Path $src) {
-                Copy-Item $src (Join-Path $targetConfDir $f) -Force -ErrorAction SilentlyContinue
-            }
-        }
-    }
+    $logPRaw     = Get-Property $paths 'logs'
+    $installPRaw = Get-Property $paths 'install'
+    $portV       = Get-Property $cfg 'port'
 
-    # Asegurar que sites-enabled exista para vhosts por cliente/sistema
-    $sitesEnabled = Join-Path $targetConfDir "sites-enabled"
-    New-Item -ItemType Directory -Path $sitesEnabled -Force | Out-Null
+    # Usar rutas absolutas
+    $logP     = if ($logPRaw)     { ([string]$logPRaw).TrimEnd('\','/').Replace('/','\') } else { 'logs' }
+    $installP = if ($installPRaw) { ([string]$installPRaw).TrimEnd('\','/').Replace('/','\') } else { '' }
 
-    # 3. Desplegar configuracion (solo si cambio)
+    # Asegurar carpetas internas del install
+    try { New-Item -ItemType Directory -Path $logPRaw -Force | Out-Null } catch { }
+    $internalConfDir = Join-Path $installP "conf"
+    try { New-Item -ItemType Directory -Path $internalConfDir -Force | Out-Null } catch { }
+
+    # 3. Desplegar configuracion en la ubicacion por defecto dentro del install (conf/nginx.conf)
     $tpl = Join-Path $PSScriptRoot "nginx.conf"
-    $targetConf = Join-Path (Get-Property $paths 'config') "nginx.conf"
+    $targetConf = Join-Path $internalConfDir "nginx.conf"
 
     $content = Get-Content $tpl -Raw -Encoding UTF8
     $content = Remove-Utf8Bom $content
 
-    $logPRaw     = Get-Property $paths 'logs'
-    $dataPRaw    = Get-Property $paths 'data'
-    $installPRaw = Get-Property $paths 'install'
-    $configPRaw  = Get-Property $paths 'config'
-    $portV       = Get-Property $cfg 'port'
+    $logPInConf = $logP -replace '\\\\','/' -replace '\\','/'
+    Write-Host "[nginx] logPath in config: $logPInConf" -ForegroundColor DarkGray
 
-    # Usar rutas absolutas (ya normalizadas arriba). Forzar backslashes para claridad
-    $logP     = if ($logPRaw)     { ([string]$logPRaw).TrimEnd('\','/').Replace('/','\') } else { 'logs' }
-    $dataP    = if ($dataPRaw)    { ([string]$dataPRaw).TrimEnd('\','/').Replace('/','\') } else { 'data' }
-    $installP = if ($installPRaw) { ([string]$installPRaw).TrimEnd('\','/').Replace('/','\') } else { '' }
-    $configP  = if ($configPRaw)  { ([string]$configPRaw).TrimEnd('\','/').Replace('/','\') } else { 'D:\config\nginx' }
-
-    # Asegurar que existan las carpetas necesarias (config + logs custom)
-    try { New-Item -ItemType Directory -Path $logPRaw -Force | Out-Null } catch { }
-    try { New-Item -ItemType Directory -Path (Split-Path $targetConf -Parent) -Force | Out-Null } catch { }
-
-    # Crear sites-enabled para vhosts por cliente/sistema
-    $sitesEnabled = Join-Path $configP "sites-enabled"
-    New-Item -ItemType Directory -Path $sitesEnabled -Force | Out-Null
-
-    # Reemplazos con String.Replace usando rutas Windows (backslashes)
+    # Reemplazos
     $content = $content.Replace('{{logPath}}', $logP)
-    $content = $content.Replace('{{dataPath}}', $dataP)
     $content = $content.Replace('{{installPath}}', $installP)
-    $content = $content.Replace('{{configPath}}', $configP)
     $content = $content.Replace('{{port}}', [string]$portV)
 
-    # Normalizar todas las rutas generadas a usar / (estilo recomendado para nginx, funciona perfecto en Windows)
+    # Normalizar rutas a /
     $content = $content -replace '([A-Za-z]):\\', '$1:/'
     $content = $content -replace '\\+', '/'
 
-    # Limpiar cualquier BOM residual antes de escribir/comparar
     $content = Remove-Utf8Bom $content
     $content = $content.TrimStart([char]0xFEFF)
 
@@ -212,42 +175,13 @@ function Install-NginxComponent {
 
     if ($needsUpdate) {
         Copy-Item $targetConf "$targetConf.bak" -ErrorAction SilentlyContinue -Force
-        # Escribir SIN BOM (Set-Content -Encoding UTF8 agrega BOM en PS 5.1 y nginx lo odia)
         $utf8NoBom = New-Object System.Text.UTF8Encoding $false
         [System.IO.File]::WriteAllText($targetConf, $content, $utf8NoBom)
         Write-Host "[nginx] Configuration updated." -ForegroundColor Green
     }
 
-    $logPInConf = $logP -replace '\\\\','/' -replace '\\','/'
-    $dataPInConf = $dataP -replace '\\\\','/' -replace '\\','/'
-    Write-Host "[nginx] logPath in config: $logPInConf" -ForegroundColor DarkGray
-    Write-Host "[nginx] dataPath in config: $dataPInConf" -ForegroundColor DarkGray
-
-    # Asegurar que los directorios referenciados en la config existen (error_log, access_log, pid)
-    try {
-        # Siempre asegurar el logPath y dataPath que calculamos (lo mas importante)
-        if ($logP) {
-            $lp = $logP -replace '/','\'
-            $ld = if ($lp -match '^[A-Za-z]:') { Split-Path $lp -Parent } else { $lp }
-            try { New-Item -ItemType Directory -Path $ld -Force | Out-Null } catch {}
-        }
-        if ($dataP) {
-            $dp = $dataP -replace '/','\'
-            $dd = if ($dp -match '^[A-Za-z]:') { Join-Path $dp 'www' } else { $dp }
-            try { New-Item -ItemType Directory -Path $dd -Force | Out-Null } catch {}
-        }
-
-        # Fallback legacy por si la config tiene rutas relativas
-        $cfgDir = Split-Path $targetConf -Parent
-        $errPath = $null
-        if ($content -match 'error_log\s+"(?<p>[^\"]+)"') { $errPath = $Matches['p'] } elseif ($content -match "error_log\s+(?<p>[^\s;]+)") { $errPath = $Matches['p'] }
-        if ($errPath) {
-            $errPathNorm = $errPath -replace '/','\\'
-            if (-not ($errPathNorm -match '^[A-Za-z]:\\')) { $errFull = Join-Path $cfgDir $errPathNorm } else { $errFull = $errPathNorm }
-            $errDir = Split-Path $errFull -Parent
-            try { New-Item -ItemType Directory -Path $errDir -Force | Out-Null } catch { }
-        }
-    } catch { }
+    # Asegurar logs dir
+    try { New-Item -ItemType Directory -Path $logPRaw -Force | Out-Null } catch { }
 
     # Probar sintaxis (compatible PS 5.1)
     # Ejecutamos desde el directorio de nginx.exe para que cualquier ruta relativa se resuelva bien.

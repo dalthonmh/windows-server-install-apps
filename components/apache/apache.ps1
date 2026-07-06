@@ -50,8 +50,6 @@ function Install-ApacheComponent {
         if (-not $val -or [string]::IsNullOrWhiteSpace($val)) {
             switch ($name) {
                 'install' { $val = if ($version) { "tools\apache\$version" } else { 'tools\apache' } }
-                'config'  { $val = 'config\apache' }
-                'data'    { $val = 'www' }
                 'logs'    { $val = 'logs\apache' }
             }
         }
@@ -60,14 +58,10 @@ function Install-ApacheComponent {
     }
 
     $installP = Get-Property $paths 'install'
-    $configP  = Get-Property $paths 'config'
-    $dataP    = Get-Property $paths 'data'
     $logsP    = Get-Property $paths 'logs'
 
     $paths = @{
         install = Get-AbsPath $installP 'install' $drive $ver
-        config  = Get-AbsPath $configP  'config'  $drive $ver
-        data    = Get-AbsPath $dataP    'data'    $drive $ver
         logs    = Get-AbsPath $logsP    'logs'    $drive $ver
     }
 
@@ -77,18 +71,16 @@ function Install-ApacheComponent {
     $dirsToCreate = @(
         $cache,
         $installDir,
-        (Get-Property $paths 'config'),
-        (Get-Property $paths 'data'),
         (Get-Property $paths 'logs')
     )
     New-Item -ItemType Directory -Path $dirsToCreate -Force | Out-Null
 
-    # Crear htdocs basico
-    $htdocs = Join-Path (Get-Property $paths 'data') "htdocs"
+    # Usamos los htdocs por defecto dentro del install de apache (no creamos carpeta www separada)
+    $htdocs = Join-Path $installDir "htdocs"
     New-Item -ItemType Directory -Path $htdocs -Force | Out-Null
     $indexHtml = Join-Path $htdocs "index.html"
     if (-not (Test-Path $indexHtml)) {
-        '<h1>It works! (Apache on port {{port}})</h1>' -replace '{{port}}', $port | Out-File $indexHtml -Encoding utf8
+        '<h1>It works! (Apache on port 81)</h1>' | Out-File $indexHtml -Encoding utf8
     }
 
     $indexPhp = Join-Path $htdocs "index.php"
@@ -135,6 +127,11 @@ function Install-ApacheComponent {
 
         # Set ServerRoot correctly
         $content = $content -replace '(?m)^ServerRoot\s+.*$', "ServerRoot `"$installDir`""
+
+        # Set DocumentRoot to our htdocs (inside the apache install)
+        $htdocs = Join-Path $installDir "htdocs"
+        $content = $content -replace '(?m)^DocumentRoot\s+.*$', "DocumentRoot `"$htdocs`""
+        $content = $content -replace '(?m)^<Directory\s+[^>]+>', "<Directory `"$htdocs`">"
 
         # Cambiar Listen al puerto deseado
         $content = $content -replace '(?m)^Listen\s+.*$', "Listen $port"

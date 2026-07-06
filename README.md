@@ -17,8 +17,7 @@ Set-ExecutionPolicy RemoteSigned -Scope LocalMachine -Force
 2. Clona o copia este repo:
 
 ```powershell
-git clone https://github.com/dalthonmh/windows-server-install-apps.git C:\deploy\install-apps
-cd C:\deploy\install-apps
+git clone https://github.com/dalthonmh/windows-server-install-apps.git
 ```
 
 3. Edita `config.psd1` (solo este archivo):

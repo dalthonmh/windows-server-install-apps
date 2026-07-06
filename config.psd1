@@ -28,9 +28,7 @@
 
         paths = @{
             install = "tools\nginx\1.30.3"
-            config  = "config\nginx"
-            data    = "www"
-            logs    = "logs\nginx"
+            logs    = "tools\logs\nginx"
         }
 
         port = 80
@@ -58,9 +56,7 @@
 
         paths = @{
             install = "tools\apache\2.4.68"
-            config  = "config\apache"
-            data    = "www"
-            logs    = "logs\apache"
+            logs    = "tools\logs\apache"
         }
 
         port = 81
