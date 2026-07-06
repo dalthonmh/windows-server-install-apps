@@ -24,12 +24,14 @@ function Install-NginxComponent {
 
     function Remove-Utf8Bom([string]$text) {
         if ([string]::IsNullOrEmpty($text)) { return $text }
-        # Quitar BOM UTF-8 si esta presente (causa "unknown directive ï»¿#" en nginx)
-        if ($text.Length -gt 0 -and $text[0] -eq [char]0xFEFF) {
-            return $text.Substring(1)
+        # Remove UTF-8 BOM (0xFEFF) if present at the start
+        if ($text.Length -gt 0 -and [int][char]$text[0] -eq 0xFEFF) {
+            $text = $text.Substring(1)
         }
-        # Por si viene como caracteres literales ï»¿ (cuando se lee mal)
-        if ($text.StartsWith("ï»¿")) { return $text.Substring(3) }
+        # Fallback for literal mangled BOM (ï»¿)
+        if ($text.StartsWith("ï»¿")) {
+            $text = $text.Substring(3)
+        }
         return $text
     }
 
@@ -198,6 +200,16 @@ function Install-NginxComponent {
     # Asegurar que el config dir y sites-enabled existen
     New-Item -ItemType Directory -Path $configDir, $sitesEnabled -Force | Out-Null
 
+    # If default.conf has a UTF-8 BOM on disk, delete it so we force a clean write
+    $defaultSiteTemp = Join-Path $sitesEnabled "default.conf"
+    if (Test-Path $defaultSiteTemp) {
+        $b = [System.IO.File]::ReadAllBytes($defaultSiteTemp)
+        if ($b.Length -ge 3 -and $b[0] -eq 0xEF -and $b[1] -eq 0xBB -and $b[2] -eq 0xBF) {
+            Remove-Item $defaultSiteTemp -Force -ErrorAction SilentlyContinue
+            Write-Host "[nginx] Removed BOM-corrupted default.conf to force clean rewrite." -ForegroundColor Yellow
+        }
+    }
+
     # Asegurar default site con las rutas actuales (lo regeneramos si es necesario)
     $defaultSite = Join-Path $sitesEnabled "default.conf"
     $desiredDefault = @"
@@ -221,9 +233,14 @@ server {
 
     $needsDefaultUpdate = $true
     if (Test-Path $defaultSite) {
-        $existingDefault = Get-Content $defaultSite -Raw -Encoding UTF8
-        $existingDefault = Remove-Utf8Bom $existingDefault
-        if ($existingDefault.Trim() -eq $desiredDefault.Trim()) {
+        # Check raw bytes for UTF-8 BOM (EF BB BF) - most reliable
+        $bytes = [System.IO.File]::ReadAllBytes($defaultSite)
+        $hasBomBytes = ($bytes.Length -ge 3 -and $bytes[0] -eq 0xEF -and $bytes[1] -eq 0xBB -and $bytes[2] -eq 0xBF)
+
+        $rawExisting = Get-Content $defaultSite -Raw -Encoding UTF8
+        $hadBom = $hasBomBytes -or ($rawExisting.Length -gt 0 -and ([int][char]$rawExisting[0] -eq 0xFEFF -or $rawExisting.StartsWith("ï»¿")))
+        $existingDefault = Remove-Utf8Bom $rawExisting
+        if (-not $hadBom -and ($existingDefault.Trim() -eq $desiredDefault.Trim())) {
             $needsDefaultUpdate = $false
         }
     }
@@ -231,12 +248,21 @@ server {
     if ($needsDefaultUpdate) {
         $utf8NoBom = New-Object System.Text.UTF8Encoding $false
         [System.IO.File]::WriteAllText($defaultSite, $desiredDefault, $utf8NoBom)
-        Write-Host "[nginx] Updated default site in $defaultSite" -ForegroundColor Green
+        Write-Host "[nginx] Updated default site in $defaultSite (no BOM)" -ForegroundColor Green
     }
 
     # 3. Desplegar la configuración principal en la ruta persistente (config), NO dentro del install versionado
     $tpl = Join-Path $PSScriptRoot "nginx.conf"
     $targetConf = Join-Path $configDir "nginx.conf"
+
+    # Pre-clean main config if it has BOM
+    if (Test-Path $targetConf) {
+        $b = [System.IO.File]::ReadAllBytes($targetConf)
+        if ($b.Length -ge 3 -and $b[0] -eq 0xEF -and $b[1] -eq 0xBB -and $b[2] -eq 0xBF) {
+            Remove-Item $targetConf -Force -ErrorAction SilentlyContinue
+            Write-Host "[nginx] Removed BOM from main nginx.conf." -ForegroundColor Yellow
+        }
+    }
 
     $content = Get-Content $tpl -Raw -Encoding UTF8
     $content = Remove-Utf8Bom $content
@@ -259,10 +285,13 @@ server {
 
     $needsUpdate = $true
     if (Test-Path $targetConf) {
-        $current = Get-Content $targetConf -Raw -Encoding UTF8
-        $current = Remove-Utf8Bom $current
+        $rawCurrent = Get-Content $targetConf -Raw -Encoding UTF8
+        $hadBomMain = $rawCurrent.Length -gt 0 -and ([int][char]$rawCurrent[0] -eq 0xFEFF -or $rawCurrent.StartsWith("ï»¿"))
+        $current = Remove-Utf8Bom $rawCurrent
         $current = $current.TrimStart([char]0xFEFF)
-        if ($current -eq $content) { $needsUpdate = $false }
+        if (-not $hadBomMain -and ($current -eq $content)) {
+            $needsUpdate = $false
+        }
     }
 
     if ($needsUpdate) {
@@ -291,8 +320,8 @@ server {
     $exitCode = 0
     $testOutput = $null
     try {
-        # Ejecutamos nginx -t y capturamos toda la salida (incluyendo stderr)
-        $testOutput = & $testExe -t -c $targetConf 2>&1
+        # Use cmd to get cleaner output from nginx (avoids "nginx.exe :" wrapper)
+        $testOutput = & cmd /c "`"$testExe`" -t -c `"$targetConf`"" 2>&1
         $exitCode = $LASTEXITCODE
     } finally {
         Pop-Location
