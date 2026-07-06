@@ -216,16 +216,21 @@ server {
 "@ -replace '{{port}}', $portV -replace '{{currentPath}}', $currentP
     $desiredDefault = $desiredDefault -replace '([A-Za-z]):\\', '$1:/' -replace '\\+', '/'
 
+    # Strip BOM from desired content for comparison/writing
+    $desiredDefault = Remove-Utf8Bom $desiredDefault
+
     $needsDefaultUpdate = $true
     if (Test-Path $defaultSite) {
         $existingDefault = Get-Content $defaultSite -Raw -Encoding UTF8
+        $existingDefault = Remove-Utf8Bom $existingDefault
         if ($existingDefault.Trim() -eq $desiredDefault.Trim()) {
             $needsDefaultUpdate = $false
         }
     }
 
     if ($needsDefaultUpdate) {
-        $desiredDefault | Out-File -FilePath $defaultSite -Encoding UTF8 -Force
+        $utf8NoBom = New-Object System.Text.UTF8Encoding $false
+        [System.IO.File]::WriteAllText($defaultSite, $desiredDefault, $utf8NoBom)
         Write-Host "[nginx] Updated default site in $defaultSite" -ForegroundColor Green
     }
 

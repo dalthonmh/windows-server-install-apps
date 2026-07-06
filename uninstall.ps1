@@ -16,9 +16,6 @@ param(
     # No pide confirmación
     [switch]$Force,
 
-    # Solo muestra lo que haría (dry-run)
-    [switch]$WhatIf,
-
     # Borra también la configuración persistente (¡peligroso!)
     [switch]$RemoveConfig,
 
@@ -36,6 +33,9 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+
+# Capture WhatIf from automatic parameter provided by SupportsShouldProcess
+$WhatIf = $PSBoundParameters.ContainsKey('WhatIf') -or $WhatIfPreference
 
 if (-not (Test-Path $ConfigPath)) {
     throw "Configuration file not found: $ConfigPath"
