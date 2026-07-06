@@ -171,7 +171,7 @@ El symlink `nginx-current` + config externa te permite:
 - `php` → instala PHP 8 thread-safe (x64) y lo agrega al PATH.
 - `composer` → instala Composer automáticamente (sin GUI). Descarga composer.phar + crea wrapper + agrega al PATH.
 - `neovim` → instala Neovim (recomendado). Usa el zip portable y lo agrega al PATH.
-- `apache` → instala Apache 2.4 (Apache Lounge) en puerto 81 + integracion basica PHP.
+- `apache` → instala Apache 2.4 (Apache Lounge) en puerto 81 + integracion basica PHP. La configuracion (httpd.conf) vive dentro del directorio de instalacion (no carpeta config externa).
 - `nginx` → instala Nginx y lo registra como servicio (puede usar NSSM).
 
 En `config.psd1` usas `downloads.base` para centralizar la URL de todos los binarios estáticos.

@@ -120,7 +120,30 @@ function Install-ApacheComponent {
         }
     }
 
-    # 3. Configurar httpd.conf (puerto + PHP basico)
+    # Crear/actualizar symlink 'apache-current' (despues de extraer)
+    $apacheBase   = Split-Path $installDir -Parent
+    $currentLink = Join-Path $apacheBase "apache-current"
+
+    if (Test-Path $currentLink) {
+        try {
+            $linkItem = Get-Item -LiteralPath $currentLink -Force -ErrorAction Stop
+            if ($linkItem.Attributes -band [System.IO.FileAttributes]::ReparsePoint) {
+                $linkItem.Delete()
+            } else {
+                Remove-Item -LiteralPath $currentLink -Force -Recurse -ErrorAction SilentlyContinue
+            }
+        } catch {
+            cmd /c "rmdir `"$currentLink`" " 2>$null | Out-Null
+        }
+    }
+    try {
+        New-Item -ItemType SymbolicLink -Path $currentLink -Target $installDir -Force | Out-Null
+        Write-Host "[apache] Symlink actualizado: apache-current -> $ver" -ForegroundColor Green
+    } catch {
+        Write-Host "[apache] No se pudo crear symlink (requiere Admin o Developer Mode activado). Usa la ruta versionada." -ForegroundColor Yellow
+    }
+
+    # 3. Configurar httpd.conf (puerto + PHP basico) - el archivo queda DENTRO del apache (conf/httpd.conf)
     $httpdConf = Join-Path $installDir "conf\httpd.conf"
     if (Test-Path $httpdConf) {
         $content = Get-Content $httpdConf -Raw
@@ -186,9 +209,22 @@ DirectoryIndex index.html index.php
     }
 
     # 4. Servicio con NSSM (si esta disponible)
+    # Usamos -D FOREGROUND + AppDirectory en raiz (config httpd.conf queda dentro del apache)
     $svcName = Get-Property (Get-Property $cfg 'service') 'name'
     $useNssm = (Get-Property (Get-Property $cfg 'service') 'useNssm')
     $nssm = "$drive\tools\nssm\nssm.exe"
+
+    # Preferir el symlink para upgrades faciles (como nginx)
+    $serviceExe = $httpdExe
+    $serviceDir = $installDir
+    if (Test-Path $currentLink) {
+        $serviceExe = Join-Path $currentLink "bin\httpd.exe"
+        $serviceDir = $currentLink
+    }
+
+    $logDir = Get-Property $paths 'logs'
+    $stdoutLog = if ($logDir) { Join-Path $logDir "stdout.log" } else { "$drive\logs\apache\stdout.log" }
+    $stderrLog = if ($logDir) { Join-Path $logDir "stderr.log" } else { "$drive\logs\apache\stderr.log" }
 
     if ((Test-Path $nssm) -and ($useNssm -ne $false)) {
         $existingSvc = Get-Service $svcName -ErrorAction SilentlyContinue
@@ -200,28 +236,38 @@ DirectoryIndex index.html index.php
             }
         }
 
-        if ($currentApp -ne $httpdExe) {
+        if ($currentApp -ne $serviceExe) {
             & {
                 $ErrorActionPreference = 'SilentlyContinue'
                 & $nssm stop $svcName 2>&1 | Out-Null
                 & $nssm remove $svcName confirm 2>&1 | Out-Null
-                & $nssm install $svcName $httpdExe | Out-Null
-                & $nssm set $svcName AppDirectory (Join-Path $installDir "bin") | Out-Null
-                & $nssm set $svcName AppParameters "-f `"$httpdConf`"" | Out-Null
+                & $nssm install $svcName $serviceExe | Out-Null
+                & $nssm set $svcName AppDirectory $serviceDir | Out-Null
+                & $nssm set $svcName AppParameters "-D FOREGROUND" | Out-Null
                 & $nssm set $svcName DisplayName (Get-Property (Get-Property $cfg 'service') 'displayName') | Out-Null
+                & $nssm set $svcName Description "Apache HTTP Server $ver" | Out-Null
                 & $nssm set $svcName Start SERVICE_AUTO_START | Out-Null
-                & $nssm set $svcName AppStdout "$drive\logs\apache\stdout.log" | Out-Null
-                & $nssm set $svcName AppStderr "$drive\logs\apache\stderr.log" | Out-Null
+                & $nssm set $svcName AppStdout $stdoutLog | Out-Null
+                & $nssm set $svcName AppStderr $stderrLog | Out-Null
                 & $nssm set $svcName AppThrottle 1000 | Out-Null
             }
             Write-Host "[apache] Service configured with NSSM." -ForegroundColor Green
+        } else {
+            # Re-aplicar parametros importantes por si acaso (sin remover)
+            & {
+                $ErrorActionPreference = 'SilentlyContinue'
+                & $nssm set $svcName AppDirectory $serviceDir | Out-Null
+                & $nssm set $svcName AppParameters "-D FOREGROUND" | Out-Null
+                & $nssm set $svcName AppStdout $stdoutLog | Out-Null
+                & $nssm set $svcName AppStderr $stderrLog | Out-Null
+            }
         }
     } else {
-        # Fallback basico
+        # Fallback basico (sin NSSM)
         $existing = Get-Service $svcName -ErrorAction SilentlyContinue
         if (-not $existing) {
             New-Service -Name $svcName `
-                        -BinaryPathName "`"$httpdExe`" -f `"$httpdConf`"" `
+                        -BinaryPathName "`"$httpdExe`" -D FOREGROUND" `
                         -DisplayName (Get-Property (Get-Property $cfg 'service') 'displayName') `
                         -StartupType Automatic | Out-Null
             Write-Host "[apache] Service registered (basic)." -ForegroundColor Yellow
@@ -242,14 +288,29 @@ function Test-ApacheComponent {
     $drv = $serverCfg
     $drive = if ($drv -and (Get-Property $drv 'drive')) { Get-Property $drv 'drive' } else { "D:" }
 
-    $installP = Get-Property (Get-Property $cfg 'paths') 'install'
-    if (-not $installP) { $installP = "apps\apache" }
-    $apache = Join-Path "$drive\" $installP
-    $httpd = Join-Path $apache "bin\httpd.exe"
+    $ver = Get-Property $cfg 'version'
+    if (-not $ver) { $ver = "2.4.68" }
+
+    $paths = Get-Property $cfg 'paths'
+    $installP = Get-Property $paths 'install'
+    $installDir = if ($installP -and ($installP -match '^[A-Za-z]:')) {
+        ([string]$installP).TrimEnd('\','/')
+    } elseif ($installP) {
+        $clean = $installP.TrimStart('\','/').Replace('/', '\')
+        Join-Path "$drive\" $clean
+    } else {
+        "$drive\tools\apache\$ver"
+    }
+
+    $httpd = Join-Path $installDir "bin\httpd.exe"
+    $currentLink = Join-Path (Split-Path $installDir -Parent) "apache-current"
 
     $svcName = Get-Property (Get-Property $cfg 'service') 'name'
     if (Test-Path $httpd) {
-        Write-Host "$svcName : installed ($apache)"
+        Write-Host "$svcName : installed ($installDir)"
+        if (Test-Path $currentLink) {
+            Write-Host "  current -> $currentLink" -ForegroundColor DarkGray
+        }
     } else {
         Write-Host "$svcName : NOT INSTALLED"
     }

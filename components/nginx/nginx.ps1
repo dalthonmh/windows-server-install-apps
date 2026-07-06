@@ -375,7 +375,8 @@ server {
                 $ErrorActionPreference = 'SilentlyContinue'
                 & $nssm stop $svcName 2>&1 | Out-Null
                 & $nssm remove $svcName confirm 2>&1 | Out-Null
-                & $nssm install $svcName $serviceExe "-c `"$targetConf`"" | Out-Null
+                & $nssm install $svcName $serviceExe | Out-Null
+                & $nssm set $svcName AppParameters "-c `"$targetConf`"" | Out-Null
                 & $nssm set $svcName AppDirectory $currentLink | Out-Null
                 & $nssm set $svcName DisplayName (Get-Property (Get-Property $cfg 'service') 'displayName') | Out-Null
                 & $nssm set $svcName Start SERVICE_AUTO_START | Out-Null
@@ -384,6 +385,13 @@ server {
                 & $nssm set $svcName AppThrottle 1000 | Out-Null
             }
             Write-Host "[nginx] Service configured with NSSM (using current symlink)." -ForegroundColor Green
+        } else {
+            # Re-aplicar params por si se necesitan (ej. cambio de config)
+            & {
+                $ErrorActionPreference = 'SilentlyContinue'
+                & $nssm set $svcName AppParameters "-c `"$targetConf`"" | Out-Null
+                & $nssm set $svcName AppDirectory $currentLink | Out-Null
+            }
         }
     } else {
         # Fallback sin NSSM (no recomendado para produccion)
