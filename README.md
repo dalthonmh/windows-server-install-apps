@@ -145,9 +145,8 @@ D:\
 │   ├── academico-estudiante\
 │   ├── academico-academico\
 │   └── ...
-├── config\
-│   └── nginx\
 ├── logs\
+│   (config de nginx/apache ahora dentro de sus *-current\conf\ )
 ├── backups\
 └── deploy\
 ```
@@ -156,14 +155,14 @@ D:\
 
 - App (versionada): `D:\tools\nginx\1.30.3`
 - Current (symlink): `D:\tools\nginx\nginx-current` → apunta a la versión activa
-- Config persistente (fácil de editar y sobrevive upgrades): `D:\config\nginx\nginx.conf` + `sites-enabled\*.conf`
+- Config: ahora dentro de la instalacion actual (`D:\tools\nginx\nginx-current\conf\nginx.conf` + `conf\sites-enabled\*.conf`). No se crea carpeta externa `D:\config\nginx`.
 - Logs: `D:\tools\logs\nginx` (o donde configures)
 
-El symlink `nginx-current` + config externa te permite:
+El symlink `nginx-current` te permite:
 
 - Actualizar Nginx fácilmente (nueva versión → symlink nuevo → reiniciar)
-- Referenciar siempre la misma ruta: `tools\nginx\current\nginx.exe -c config\nginx\nginx.conf`
-- Mantener tus vhosts en `config\nginx\sites-enabled\` sin que se pierdan en upgrades.
+- Toda la configuracion vive dentro: `tools\nginx\nginx-current\conf\nginx.conf`
+- Los vhosts van en `nginx-current\conf\sites-enabled\*.conf` (se pierden en upgrade a menos que los copies manualmente o uses un proceso de migracion).
 
 ## Componentes separados (recomendado)
 
@@ -171,7 +170,7 @@ El symlink `nginx-current` + config externa te permite:
 - `php` → instala PHP 8 thread-safe (x64) y lo agrega al PATH.
 - `composer` → instala Composer automáticamente (sin GUI). Descarga composer.phar + crea wrapper + agrega al PATH.
 - `neovim` → instala Neovim (recomendado). Usa el zip portable y lo agrega al PATH.
-- `apache` → instala Apache 2.4 (Apache Lounge) en puerto 81 + integracion basica PHP. La configuracion (httpd.conf) vive dentro del directorio de instalacion (no carpeta config externa).
+- `apache` → instala Apache 2.4 (Apache Lounge) en puerto 81 + integracion basica PHP. La configuracion (httpd.conf) vive dentro del directorio de instalacion (no carpeta config externa). Usa `scripts/setup-apache-service.ps1` para registrar con NSSM apuntando a `apache-current`.
 - `nginx` → instala Nginx y lo registra como servicio (puede usar NSSM).
 
 En `config.psd1` usas `downloads.base` para centralizar la URL de todos los binarios estáticos.

@@ -27,8 +27,9 @@
         version = "1.30.3"
 
         paths = @{
+            # Config ahora vive dentro del propio nginx (conf/nginx.conf + conf/sites-enabled)
+            # No se usa carpeta externa D:\config\nginx
             install = "tools\nginx\1.30.3"
-            config  = "config\nginx"
             logs    = "tools\logs\nginx"
         }
 

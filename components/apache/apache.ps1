@@ -208,79 +208,84 @@ DirectoryIndex index.html index.php
         Write-Host "[apache] httpd.conf configured (port $port + basic PHP)." -ForegroundColor Green
     }
 
-    # 4. Servicio con NSSM (si esta disponible)
-    # Usamos -D FOREGROUND + AppDirectory en raiz (config httpd.conf queda dentro del apache)
-    $svcName = Get-Property (Get-Property $cfg 'service') 'name'
-    $useNssm = (Get-Property (Get-Property $cfg 'service') 'useNssm')
-    $nssm = "$drive\tools\nssm\nssm.exe"
+    # NO registramos el servicio directamente aqui con NSSM (puede no funcionar bien en todos los entornos).
+    # Generamos scripts listos para ejecutar (apuntando a apache-current) para que el usuario
+    # los corra como Admin cuando quiera instalar/actualizar el servicio.
 
-    # Preferir el symlink para upgrades faciles (como nginx)
-    $serviceExe = $httpdExe
-    $serviceDir = $installDir
-    if (Test-Path $currentLink) {
-        $serviceExe = Join-Path $currentLink "bin\httpd.exe"
-        $serviceDir = $currentLink
-    }
+    $svcName = Get-Property (Get-Property $cfg 'service') 'name'
+    if (-not $svcName) { $svcName = "apache" }
+    $displayName = Get-Property (Get-Property $cfg 'service') 'displayName'
+    if (-not $displayName) { $displayName = "Apache HTTP Server" }
 
     $logDir = Get-Property $paths 'logs'
     $stdoutLog = if ($logDir) { Join-Path $logDir "stdout.log" } else { "$drive\logs\apache\stdout.log" }
     $stderrLog = if ($logDir) { Join-Path $logDir "stderr.log" } else { "$drive\logs\apache\stderr.log" }
 
-    if ((Test-Path $nssm) -and ($useNssm -ne $false)) {
-        $existingSvc = Get-Service $svcName -ErrorAction SilentlyContinue
-        $currentApp = $null
-        if ($existingSvc) {
-            $currentApp = & {
-                $ErrorActionPreference = 'SilentlyContinue'
-                & $nssm get $svcName Application 2>&1
-            }
-        }
-
-        if ($currentApp -ne $serviceExe) {
-            & {
-                $ErrorActionPreference = 'SilentlyContinue'
-                & $nssm stop $svcName 2>&1 | Out-Null
-                & $nssm remove $svcName confirm 2>&1 | Out-Null
-                & $nssm install $svcName $serviceExe | Out-Null
-                & $nssm set $svcName AppDirectory $serviceDir | Out-Null
-                & $nssm set $svcName AppParameters "-D FOREGROUND" | Out-Null
-                & $nssm set $svcName DisplayName (Get-Property (Get-Property $cfg 'service') 'displayName') | Out-Null
-                & $nssm set $svcName Description "Apache HTTP Server $ver" | Out-Null
-                & $nssm set $svcName Start SERVICE_AUTO_START | Out-Null
-                & $nssm set $svcName AppStdout $stdoutLog | Out-Null
-                & $nssm set $svcName AppStderr $stderrLog | Out-Null
-                & $nssm set $svcName AppThrottle 1000 | Out-Null
-            }
-            Write-Host "[apache] Service configured with NSSM." -ForegroundColor Green
-        } else {
-            # Re-aplicar parametros importantes por si acaso (sin remover)
-            & {
-                $ErrorActionPreference = 'SilentlyContinue'
-                & $nssm set $svcName AppDirectory $serviceDir | Out-Null
-                & $nssm set $svcName AppParameters "-D FOREGROUND" | Out-Null
-                & $nssm set $svcName AppStdout $stdoutLog | Out-Null
-                & $nssm set $svcName AppStderr $stderrLog | Out-Null
-            }
-        }
-    } else {
-        # Fallback basico (sin NSSM)
-        $existing = Get-Service $svcName -ErrorAction SilentlyContinue
-        if (-not $existing) {
-            New-Service -Name $svcName `
-                        -BinaryPathName "`"$httpdExe`" -D FOREGROUND" `
-                        -DisplayName (Get-Property (Get-Property $cfg 'service') 'displayName') `
-                        -StartupType Automatic | Out-Null
-            Write-Host "[apache] Service registered (basic)." -ForegroundColor Yellow
-        }
+    # Preferir current symlink
+    $serviceDir = $installDir
+    if (Test-Path $currentLink) {
+        $serviceDir = $currentLink
     }
 
-    # Iniciar servicio si esta parado
-    $svc = Get-Service $svcName -ErrorAction SilentlyContinue
-    if ($svc -and $svc.Status -ne 'Running') {
-        Start-Service $svcName -ErrorAction SilentlyContinue
-    }
+    # Crear scripts/ dentro de la instalacion (accesible via current)
+    $scriptsDir = Join-Path $installDir "scripts"
+    New-Item -ItemType Directory -Path $scriptsDir -Force | Out-Null
 
-    Write-Host "[apache] Ready: $installDir (port $port)" -ForegroundColor Green
+    # Script de setup del servicio (PowerShell). Usa -D FOREGROUND + current + config interna.
+    $setupScript = Join-Path $scriptsDir "setup-apache-service.ps1"
+    $setupContent = @"
+# Auto-generado por deploy.ps1 - $(Get-Date -Format 'yyyy-MM-dd HH:mm')
+# Ejecuta como ADMINISTRADOR para registrar el servicio de Apache con NSSM.
+# Apunta SIEMPRE a la carpeta current (apache-current) para upgrades.
+
+param(
+    [string]`$Nssm = "nssm"
+)
+
+`$current   = "$currentLink"
+`$exe       = Join-Path `$current "bin\httpd.exe"
+`$appDir    = `$current
+
+`$logDir    = "$logDir"
+`$stdoutLog = if (`$logDir) { Join-Path `$logDir "stdout.log" } else { Join-Path `$current "logs\stdout.log" }
+`$stderrLog = if (`$logDir) { Join-Path `$logDir "stderr.log" } else { Join-Path `$current "logs\stderr.log" }
+
+Write-Host "Configurando servicio NSSM para Apache (current: `$current)..." -ForegroundColor Cyan
+
+& `$Nssm stop $svcName 2>`$null | Out-Null
+& `$Nssm remove $svcName confirm 2>`$null | Out-Null
+
+& `$Nssm install $svcName "`$exe" | Out-Null
+& `$Nssm set $svcName AppDirectory "`$appDir" | Out-Null
+& `$Nssm set $svcName AppParameters "-D FOREGROUND" | Out-Null
+& `$Nssm set $svcName DisplayName "$displayName" | Out-Null
+& `$Nssm set $svcName Description "Apache HTTP Server $ver" | Out-Null
+& `$Nssm set $svcName Start SERVICE_AUTO_START | Out-Null
+& `$Nssm set $svcName AppStdout "`$stdoutLog" | Out-Null
+& `$Nssm set $svcName AppStderr "`$stderrLog" | Out-Null
+& `$Nssm set $svcName AppThrottle 1000 | Out-Null
+
+Write-Host "Listo. Inicia con: nssm start $svcName" -ForegroundColor Green
+"@
+    $utf8NoBom = New-Object System.Text.UTF8Encoding $false
+    [System.IO.File]::WriteAllText($setupScript, $setupContent, $utf8NoBom)
+
+    Write-Host "[apache] Script para instalar servicio creado: $setupScript" -ForegroundColor Green
+    Write-Host "        Ejecutalo manualmente como Admin para registrar con NSSM (usa current)." -ForegroundColor DarkGray
+
+    # run.bat simple dentro del apache (para pruebas o apuntar NSSM a el)
+    $runBat = Join-Path $installDir "run.bat"
+    $runContent = @"
+@echo off
+cd /d "%~dp0"
+echo Iniciando Apache HTTP Server (FOREGROUND) desde %CD%...
+bin\httpd.exe -D FOREGROUND
+"@
+    [System.IO.File]::WriteAllText($runBat, $runContent, $utf8NoBom)
+
+    Write-Host "[apache] Ready: $installDir (port $port) (current -> $currentLink)" -ForegroundColor Green
+    Write-Host "[apache] Config: $httpdConf (dentro del apache)" -ForegroundColor Green
+    Write-Host "[apache] Para servicio NSSM: ejecuta $scriptsDir\setup-apache-service.ps1 (Admin)" -ForegroundColor DarkGray
 }
 
 function Test-ApacheComponent {
@@ -311,6 +316,7 @@ function Test-ApacheComponent {
         if (Test-Path $currentLink) {
             Write-Host "  current -> $currentLink" -ForegroundColor DarkGray
         }
+        Write-Host "  Para servicio: ejecuta $installDir\scripts\setup-apache-service.ps1 (como Admin)" -ForegroundColor DarkGray
     } else {
         Write-Host "$svcName : NOT INSTALLED"
     }
